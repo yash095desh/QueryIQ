@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import { Audiowide, Inter } from "next/font/google";
-import {
-  ClerkProvider
-} from '@clerk/nextjs'
+import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
+import { SidebarProvider } from "@/components/ui/sidebar";
 
 const audioWide = Audiowide({
   variable: "--font-audiowide",
@@ -28,13 +27,26 @@ export default function RootLayout({
 }) {
   return (
     <ClerkProvider>
-    <html lang="en" className="dark">
-      <body className={`${inter.variable} ${audioWide.variable} antialiased font-sans`}>
-        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {children}
-        </div>
-      </body>
-    </html>
+      <html lang="en" className="dark">
+        <body
+          className={`${inter.variable} ${audioWide.variable} antialiased font-sans`}
+        >
+          <div
+            className="absolute inset-0 -z-10 bg-white dark:bg-black"
+            style={{
+              backgroundImage: `
+      linear-gradient(to right, rgba(229,231,235,0.15) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(229,231,235,0.15) 1px, transparent 1px),
+      radial-gradient(circle 600px at 20% 100%, rgba(255,255,255,0.2), transparent),
+      radial-gradient(circle 600px at 100% 80%, rgba(255,255,255,0.1), transparent)
+    `,
+              backgroundSize: "48px 48px, 48px 48px, 100% 100%, 100% 100%",
+            }}
+          />
+
+          <SidebarProvider>{children}</SidebarProvider>
+        </body>
+      </html>
     </ClerkProvider>
   );
 }
