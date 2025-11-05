@@ -1,56 +1,81 @@
 import { NextResponse } from "next/server";
-import { encrypt } from "@/lib/encryption";
-import { auth } from "@clerk/nextjs/server"; 
-import { prisma } from "@/lib/prisma";
+import { projectSchema } from "./helper/projectSchema";
+import generateDbSummary from "./helper/generateDBSummary";
+import createProject from "./helper/createProject";
+import { getAuthenticatedUser } from "@/lib/getAuthenticatedUser";
 
 
 export async function POST(req: Request) {
   try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const user = await getAuthenticatedUser();
 
-    const { name, db_url, dbType } = await req.json();
-    if (!name || !db_url || !dbType)
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON in request body" },
+        { status: 400 }
+      );
+    }
 
-    const encryptedDbUrl = encrypt(db_url);
+    const parsed = projectSchema.safeParse(body);
 
-    const project = await prisma.project.create({
-      data: {
-        userId: userId,
-        name,
-        dbType,
-        encryptedDbUrl,
+    if (!parsed.success) {
+      const firstError = parsed.error.issues[0]?.message || "Invalid input";
+      return NextResponse.json({ error: firstError }, { status: 400 });
+    }
+
+    const projectData = parsed.data;
+
+    let dbSummary;
+    try {
+      dbSummary = await generateDbSummary(
+        projectData.dbUrl,
+        projectData.dbType
+      );
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Database introspection failed",
+          details:
+            "Please verify your database connection string and ensure it is accessible.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const project = await createProject(
+      user.id,
+      projectData,
+      dbSummary.summary
+    );
+    console.log(` Project created successfully: ${project.id}`);
+
+    return NextResponse.json(
+      {
+        message: "Project created successfully",
+        project: {
+          ...project,
+          tablesCount: Array.isArray(dbSummary.summary)
+            ? dbSummary.summary.length
+            : 0,
+        },
       },
-    });
-
-    return NextResponse.json(project, { status: 201 });
-  } catch (err: any) {
-    console.error(err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
-}
-
-
-export async function GET() {
-  try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const projects = await prisma.project.findMany({
-      where: { userId: userId },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        name: true,
-        dbType: true,
-        createdAt: true,
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error(" Unexpected error in POST /api/projects:", error);
+    return NextResponse.json(
+      {
+        error: "Unexpected server error",
+        message:
+          error instanceof Error ? error.message : "Please try again later",
       },
-    });
-
-    return NextResponse.json(projects);
-  } catch (err: any) {
-    console.error(err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+      { status: 500 }
+    );
   }
 }

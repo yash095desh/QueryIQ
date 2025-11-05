@@ -1,7 +1,11 @@
+"use client";
+
 import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import React from "react";
+import React, { useState } from "react";
 import { PlusCircle, FolderKanban } from "lucide-react";
+import CreateProjectModal from "@/components/createProjectModal";
+
 
 const projects = [
   {
@@ -27,7 +31,12 @@ const projects = [
   },
 ];
 
+
+
 const MyProjects = () => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+
   return (
     <div className="flex w-full h-screen p-2 gap-2">
       {/* Sidebar */}
@@ -49,6 +58,7 @@ const MyProjects = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* Create New Card */}
             <div
+              onClick={() => setIsModalOpen(true)}
               className="group border border-border rounded-xl p-6 flex flex-col items-center justify-center text-center 
               bg-white/10 dark:bg-zinc-800/40 backdrop-blur-lg hover:bg-white/20 transition-all cursor-pointer"
             >
@@ -97,6 +107,9 @@ const MyProjects = () => {
           </div>
         </div>
       </div>
+
+      {/* Create Project Modal */}
+      <CreateProjectModal isModalOpen={isModalOpen} setIsModalOpen={setIsModalOpen}/>
     </div>
   );
 };
