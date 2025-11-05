@@ -3,6 +3,7 @@ import { projectSchema } from "./helper/projectSchema";
 import generateDbSummary from "./helper/generateDBSummary";
 import createProject from "./helper/createProject";
 import { getAuthenticatedUser } from "@/lib/getAuthenticatedUser";
+import { prisma } from "@/lib/prisma";
 
 
 export async function POST(req: Request) {
@@ -77,5 +78,38 @@ export async function POST(req: Request) {
       },
       { status: 500 }
     );
+  }
+}
+
+export async function GET() {
+  try {
+    
+    const user = await getAuthenticatedUser()
+    
+    const projects = await prisma.project.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        dbType: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    })
+
+    
+    return NextResponse.json({ projects }, { status: 200 })
+  } catch (error) {
+    console.error('Failed to fetch user projects:', error)
+
+    return NextResponse.json(
+      {
+        error: 'Failed to fetch projects',
+        message: error instanceof Error ? error.message : 'Please try again later',
+      },
+      { status: 500 }
+    )
   }
 }
