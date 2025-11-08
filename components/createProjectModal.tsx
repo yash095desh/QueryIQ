@@ -18,6 +18,7 @@ import {
   XCircle,
   Database,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 const DB_TYPES = [
   { value: "postgres", label: "PostgreSQL", icon: "🐘" },
@@ -45,6 +46,8 @@ const CreateProjectModal = ({ isModalOpen, setIsModalOpen }: CreateProjectModalP
     dbType: "postgres",
     dbUrl: "",
   });
+  const router = useRouter();
+
 
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -70,7 +73,11 @@ const CreateProjectModal = ({ isModalOpen, setIsModalOpen }: CreateProjectModalP
         });
         setResult(null);
         setIsModalOpen(false);
-      }, 2000);
+
+        if (data.project?.id) {
+          router.push(`/chat/${data.project.id}`);
+        }
+      }, 1200);
     } catch (error: any) {
       setResult({
         success: false,

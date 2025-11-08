@@ -7,13 +7,15 @@ import { PlusCircle, FolderKanban } from "lucide-react";
 import CreateProjectModal from "@/components/createProjectModal";
 import axios from "axios";
 import { Badge } from "@/components/ui/badge";
+import { useRouter } from "next/navigation";
+
 
 interface Project {
   id: string;
   name: string;
   description: string;
   updatedAt: string;
-  type: string;
+  dbType: string;
 }
 
 const DB_TYPES: Record<
@@ -42,6 +44,8 @@ const MyProjects = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -102,10 +106,11 @@ const MyProjects = () => {
 
               {/* Existing Projects */}
               {projects.map((project) => {
-                const typeInfo = DB_TYPES[project.type] || DB_TYPES.other;
+                const typeInfo = DB_TYPES[project.dbType] || DB_TYPES.other;
                 return (
                   <div
                     key={project.id}
+                    onClick={() => router.push(`/chat/${project.id}`)}
                     className="border border-border rounded-xl p-5 flex flex-col justify-between cursor-pointer 
                     bg-white/10 dark:bg-zinc-800/40 backdrop-blur-lg hover:bg-white/20 transition-all"
                   >
