@@ -61,18 +61,14 @@ model ChatSession {
 
 
 model Message {
-  id            String   @id 
+  id            String   @id
   chatSessionId String
-  role          String 
-  content       String   @db.Text 
-  toolCallId    String?
-  toolCallName  String?
-  toolCallArgs  Json? 
-  toolResultId  String?
-  toolResult    Json? 
-  attachments   Json? 
-  metadata      Json? 
+  role          String
+  parts         Json     
+  metadata      Json?    
+  content       String?  
   createdAt     DateTime @default(now())
+  
   chatSession ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
   @@index([chatSessionId, createdAt])
 }
