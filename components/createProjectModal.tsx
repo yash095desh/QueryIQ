@@ -75,7 +75,7 @@ const CreateProjectModal = ({ isModalOpen, setIsModalOpen }: CreateProjectModalP
         setIsModalOpen(false);
 
         if (data.project?.id) {
-          router.push(`/chat/${data.project.id}`);
+          router.push(`projects/${data.project.id}/chat`);
         }
       }, 1200);
     } catch (error: any) {

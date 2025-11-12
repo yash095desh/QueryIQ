@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Import Streamdown styles */
+@source "../node_modules/streamdown/dist/index.js";
+
+/* Import KaTeX styles (Crucial for math equations) */
+@import "../node_modules/katex/dist/katex.min.css"; 
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -203,3 +209,4 @@ body{
   scrollbar-width: thin;
   scrollbar-color: rgba(100, 100, 100, 0.3) transparent;
 }
+

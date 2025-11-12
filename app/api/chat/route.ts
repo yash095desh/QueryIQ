@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { openai } from "@ai-sdk/openai";
 import { convertToModelMessages, streamText, UIMessage } from "ai";
 import { z } from "zod";
+import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 
 export const maxDuration = 30;
 
@@ -27,8 +28,12 @@ export async function POST(req: Request) {
 
   const dbUrl = await decrypt(project?.encryptedDbUrl);
 
+  const openrouter = createOpenRouter({
+    apiKey: `${process.env.API_KEY_REF}`,
+  })
+
   const result = streamText({
-    model: openai("gpt-4o"),
+    model: openrouter("openai/gpt-4o-mini"),
     system: `You are a helpful database assistant for a project with the following details:
 
     Database Summary:
