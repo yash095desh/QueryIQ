@@ -3,7 +3,7 @@
 import { decrypt } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
 
-export const maxDuration = 60; // Longer timeout for exports
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   try {
