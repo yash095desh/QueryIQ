@@ -4,8 +4,9 @@ import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithToolCalls,
+  UIMessage,
 } from "ai";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 
@@ -39,6 +40,7 @@ import { Loader } from "@/components/ai-elements/loader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+
 import {
   Table,
   TableBody,
@@ -63,23 +65,49 @@ import {
   ThumbsDownIcon,
 } from "lucide-react";
 import { Streamdown } from "streamdown";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import axios from "axios";
 
 function ChatPage() {
   const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const projectId = params.projectId as string;
+
+  // Get sessionId from URL query params
+  const sessionId = searchParams.get("session");
+
   const [isExporting, setIsExporting] = useState(false);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [disliked, setDisliked] = useState<Record<string, boolean>>({});
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const { messages, sendMessage, addToolOutput, status, regenerate } = useChat({
+  const { messages, sendMessage, addToolOutput, status, regenerate, setMessages } = useChat({
     transport: new DefaultChatTransport({
-      api: "/api/chat",
-      body: { projectId },
+      api: `/api/chat/${projectId}`,
+      prepareSendMessagesRequest({ messages, id }) {
+        return {
+          body: {
+            messages: [messages[messages.length - 1]], 
+            sessionId: sessionId || undefined,
+          },
+        };
+      },
     }),
-
+    experimental_throttle: 100, 
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+
+    onFinish: ({message,messages}) => {
+      console.log("finsh",{message,messages})
+      if ((message.metadata as any)?.sessionId && !sessionId) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("session", (message.metadata as any).sessionId);
+        router.replace(url.pathname + url.search, { scroll: false });
+      }
+    },
+
+    onError: (error) => {
+      console.error("Chat error:", error);
+    },
 
     async onToolCall({ toolCall }) {
       if (toolCall.dynamic) return;
@@ -537,6 +565,23 @@ function ChatPage() {
       sendMessage({ text: message.text });
     }
   };
+
+  const loadMessages = async() =>{
+    try{
+      const response = await axios.get(`/api/chat/${projectId}?session=${sessionId}`)
+      if(response.status == 200){
+        setMessages(response.data.messages)
+      }
+    }catch(error){
+      console.log("Error while fetching session messages",(error as Error).message)
+    }
+  }
+
+  useEffect(()=>{
+    if(projectId && sessionId){
+      loadMessages();
+    }
+  },[sessionId,projectId])
 
   return (
     <div className="min-h-screen w-full bg-transparent backdrop-blur-md  dark:bg-zinc-900/30">
