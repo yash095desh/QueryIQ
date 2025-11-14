@@ -45,7 +45,7 @@ export default function RootLayout({
             }}
           />
 
-          <SidebarProvider>{children}</SidebarProvider>
+          <SidebarProvider className="[--sidebar-width: 14rem]" >{children}</SidebarProvider>
         </body>
       </html>
     </ClerkProvider>

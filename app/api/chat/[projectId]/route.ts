@@ -17,6 +17,7 @@ import {
   updateSessionTitle,
 } from "./utils/dbHelpers";
 import { generateSessionTitle } from "./utils/generateSessionTitle";
+import { prisma } from "@/lib/prisma";
 
 export const maxDuration = 30;
 
@@ -115,34 +116,23 @@ export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ projectId: string }> }
 ) {
-  try {
-    const { projectId } = await ctx.params;
-    const { searchParams } = new URL(req.url);
-    const sessionId = searchParams.get("session");
+  const { projectId } = await ctx.params;
+  const { searchParams } = new URL(req.url);
+  const sessionId = searchParams.get("session");
 
-    if (!sessionId) {
-      return NextResponse.json(
-        { error: "Missing session ID" },
-        { status: 400 }
-      );
-    }
-
-    const user = await getAuthenticatedUser();
-    const project = await getProjectDetails(projectId);
-    if (!project) {
-      return new NextResponse("Project not found", { status: 404 });
-    }
-
-    const messages: UIMessage[] = await loadMessages(sessionId);
-    return NextResponse.json({ messages }, { status: 200 });
-  } catch (error) {
-    console.error("Error while fetching chat messages:", error);
-    return NextResponse.json(
-      {
-        error: "Internal server error",
-        message: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 }
-    );
+  if (!sessionId) {
+    return Response.json({ messages: [], title: null });
   }
+
+  const user = await getAuthenticatedUser();
+  const messages = await loadMessages(sessionId);
+  const session = await prisma.chatSession.findUnique({
+    where: { id: sessionId },
+    select: { title: true }
+  });
+
+  return Response.json({ 
+    messages, 
+    title: session?.title 
+  });
 }

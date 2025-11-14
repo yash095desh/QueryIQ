@@ -4,7 +4,6 @@ import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithToolCalls,
-  UIMessage,
 } from "ai";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useEffect, useRef, useState } from "react";
@@ -21,7 +20,6 @@ import {
   MessageAction,
   MessageActions,
   MessageContent,
-  MessageResponse,
   MessageToolbar,
 } from "@/components/ai-elements/message";
 import {
@@ -58,14 +56,17 @@ import {
   AlertTriangle,
   BarChart3,
   Table2,
-  Info,
   RefreshCcwIcon,
   CopyIcon,
   ThumbsUpIcon,
   ThumbsDownIcon,
+  MessageSquare,
 } from "lucide-react";
 import { Streamdown } from "streamdown";
 import axios from "axios";
+import { ChatSessionSidebar } from "@/components/ChatSessionSidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { useUser } from "@clerk/nextjs";
 
 function ChatPage() {
   const params = useParams();
@@ -79,25 +80,34 @@ function ChatPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [disliked, setDisliked] = useState<Record<string, boolean>>({});
+  const [sessionTitle, setSessionTitle] = useState<string>("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const {user} = useUser();
 
-  const { messages, sendMessage, addToolOutput, status, regenerate, setMessages } = useChat({
+  const {
+    messages,
+    sendMessage,
+    addToolOutput,
+    status,
+    regenerate,
+    setMessages,
+  } = useChat({
     transport: new DefaultChatTransport({
       api: `/api/chat/${projectId}`,
       prepareSendMessagesRequest({ messages, id }) {
         return {
           body: {
-            messages: [messages[messages.length - 1]], 
+            messages: [messages[messages.length - 1]],
             sessionId: sessionId || undefined,
           },
         };
       },
     }),
-    experimental_throttle: 100, 
+    experimental_throttle: 100,
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
 
-    onFinish: ({message,messages}) => {
-      console.log("finsh",{message,messages})
+    onFinish: ({ message, messages }) => {
+      console.log("finish", { message, messages });
       if ((message.metadata as any)?.sessionId && !sessionId) {
         const url = new URL(window.location.href);
         url.searchParams.set("session", (message.metadata as any).sessionId);
@@ -566,200 +576,305 @@ function ChatPage() {
     }
   };
 
-  const loadMessages = async() =>{
-    try{
-      const response = await axios.get(`/api/chat/${projectId}?session=${sessionId}`)
-      if(response.status == 200){
-        setMessages(response.data.messages)
+  const loadMessages = async () => {
+    try {
+      const response = await axios.get(
+        `/api/chat/${projectId}?session=${sessionId}`
+      );
+      if (response.status === 200) {
+        setMessages(response.data.messages);
+        setSessionTitle(response.data.title || "Chat Session");
       }
-    }catch(error){
-      console.log("Error while fetching session messages",(error as Error).message)
+    } catch (error) {
+      console.log(
+        "Error while fetching session messages",
+        (error as Error).message
+      );
     }
-  }
+  };
 
-  useEffect(()=>{
-    if(projectId && sessionId){
+  useEffect(() => {
+    if (projectId && sessionId) {
       loadMessages();
+    } else {
+      setSessionTitle("");
     }
-  },[sessionId,projectId])
+  }, [sessionId, projectId]);
 
   return (
-    <div className="min-h-screen w-full bg-transparent backdrop-blur-md  dark:bg-zinc-900/30">
-      <div className="max-h-screen h-full w-full p-2 pb-4 overflow-y-auto">
-        <div className=" max-w-6xl w-full h-full mx-auto flex flex-col justify-between ">
-          {/* Conversation Area */}
-          <div className="flex-1 ">
-            <Conversation>
-              <ConversationContent className="flex-1 px-4 sm:px-6 lg:px-8 py-6">
-                {/* Empty State */}
-                {messages.length === 0 ? (
-                  <ConversationEmptyState
-                    icon={<Database className="h-12 w-12" />}
-                    title="Database Assistant"
-                    description="Ask me anything about your database. I can help you query data, generate insights, and export results."
-                  />
-                ) : (
-                  <div className="space-y-4">
-                    {messages.map((message, messageIndex) => {
-                      const isLastMessage =
-                        messageIndex === messages.length - 1;
-                      const isLastAssistantMessage =
-                        message.role === "assistant" && isLastMessage;
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "20rem",
+          "--sidebar-width-mobile": "20rem",
+        } as React.CSSProperties
+      }
+    >
+      <div className="flex flex-col min-h-screen w-full bg-transparent backdrop-blur-md dark:bg-zinc-900/30">
+        {/* Top Header */}
+        <div className="border-b border-border p-3 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            {sessionId ? (
+              <>
+                <MessageSquare className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <h1 className="text-sm font-medium truncate max-w-md">
+                    {sessionTitle || `Welcome back, ${user?.firstName}`}
+                  </h1>
+                  <p className="text-xs text-muted-foreground">
+                    Session: {sessionId.slice(0, 8)}...
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div>
+                <h1 className="text-sm font-medium">New Chat</h1>
+                <p className="text-xs text-muted-foreground">
+                  Start a conversation with your database
+                </p>
+              </div>
+            )}
+          </div>
+          <SidebarTrigger />
+        </div>
 
-                      const textParts = message.parts.filter(
-                        (p: any) => p.type === "text"
-                      );
-                      const toolParts = message.parts.filter(
-                        (p: any) => p.type !== "text"
-                      );
-
-                      return (
-                        <Fragment key={message.id}>
-                          {/* Render text parts */}
-                          {textParts.length > 0 && (
-                            <Message from={message.role}>
-                              <MessageContent>
-                                {textParts.map((part: any, index) => (
-                                  <Streamdown
-                                    isAnimating={status === "streaming"}
-                                    key={index}
-                                  >
-                                    {part.text}
-                                  </Streamdown>
-                                ))}
-                              </MessageContent>
-                            </Message>
-                          )}
-
-                          {/* Render tool parts */}
-                          {toolParts.map((part: any, i: number) => {
-                            const callId =
-                              part.toolCallId || `${message.id}-tool-${i}`;
-                            return (
-                              <Message key={callId} from="assistant">
-                                <MessageContent>
-                                  {renderToolPart(part, callId)}
-                                </MessageContent>
-                              </Message>
-                            );
-                          })}
-
-                          {/* Toolbar for assistant */}
-                          {message.role === "assistant" && (
-                            <MessageToolbar>
-                              <MessageActions>
-                                {isLastAssistantMessage &&
-                                  status === "ready" && (
-                                    <MessageAction
-                                      onClick={() => regenerate()}
-                                      label="Regenerate"
-                                      tooltip="Regenerate response"
-                                    >
-                                      <RefreshCcwIcon className="size-4" />
-                                    </MessageAction>
-                                  )}
-                                <MessageAction
-                                  label="Like"
-                                  onClick={() =>
-                                    setLiked((prev) => ({
-                                      ...prev,
-                                      [message.id]: !prev[message.id],
-                                    }))
-                                  }
-                                  tooltip="Like this response"
-                                >
-                                  <ThumbsUpIcon
-                                    className="size-4"
-                                    fill={
-                                      liked[message.id]
-                                        ? "currentColor"
-                                        : "none"
-                                    }
-                                  />
-                                </MessageAction>
-                                <MessageAction
-                                  label="Dislike"
-                                  onClick={() =>
-                                    setDisliked((prev) => ({
-                                      ...prev,
-                                      [message.id]: !prev[message.id],
-                                    }))
-                                  }
-                                  tooltip="Dislike this response"
-                                >
-                                  <ThumbsDownIcon
-                                    className="size-4"
-                                    fill={
-                                      disliked[message.id]
-                                        ? "currentColor"
-                                        : "none"
-                                    }
-                                  />
-                                </MessageAction>
-                                <MessageAction
-                                  onClick={() =>
-                                    handleCopy(
-                                      textParts
-                                        .map((p: any) => p.text)
-                                        .join("\n")
-                                    )
-                                  }
-                                  label="Copy"
-                                  tooltip="Copy to clipboard"
-                                >
-                                  <CopyIcon className="size-4" />
-                                </MessageAction>
-                              </MessageActions>
-                            </MessageToolbar>
-                          )}
-                        </Fragment>
-                      );
-                    })}
-                    {/* Stream status */}
-                    {status === "streaming" && (
-                      <Message from="assistant">
-                        <MessageContent>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Loader>Thinking...</Loader>
-                          </div>
-                        </MessageContent>
-                      </Message>
-                    )}
-
-                    {/* Exporting state */}
-                    {isExporting && (
-                      <Message from="assistant">
-                        <MessageContent>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Loader>Preparing download...</Loader>
-                          </div>
-                        </MessageContent>
-                      </Message>
-                    )}
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {messages.length === 0 ? (
+            /* Empty State - Centered Layout */
+            <div className="flex-1 flex flex-col items-center justify-center px-4">
+              <div className="w-full max-w-3xl space-y-8">
+                {/* Welcome Message */}
+                <div className="text-center space-y-4">
+                  <div className="flex justify-center">
+                    <div className="p-4 bg-primary/10 rounded-full">
+                      <Database className="h-12 w-12 text-primary" />
+                    </div>
                   </div>
-                )}
-              </ConversationContent>
+                  <div>
+                    <h2 className="text-2xl font-bold mb-2">
+                      Welcome to Database Assistant
+                    </h2>
+                    <p className="text-muted-foreground">
+                      Ask me anything about your database. I can help you query
+                      data, generate insights, and export results.
+                    </p>
+                  </div>
+                </div>
 
-              <ConversationScrollButton />
-            </Conversation>
-          </div>
+                {/* Example Prompts */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {[
+                    "Show me all tables in my database",
+                    "Count total rows in users table",
+                    "Get the latest 10 orders",
+                    "Analyze sales data by month",
+                  ].map((prompt, idx) => (
+                    <Button
+                      key={idx}
+                      variant="outline"
+                      className="justify-start text-left h-auto py-3 px-4"
+                      onClick={() => sendMessage({ text: prompt })}
+                    >
+                      <span className="text-sm">{prompt}</span>
+                    </Button>
+                  ))}
+                </div>
 
-          {/* Fixed Input Area */}
-          <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
-            <PromptInputProvider>
-              <PromptInput onSubmit={handleSubmit}>
-                <PromptInputBody>
-                  <PromptInputTextarea ref={textareaRef} />
-                </PromptInputBody>
-                <PromptInputFooter className=" flex justify-end">
-                  <PromptInputSubmit status={status} />
-                </PromptInputFooter>
-              </PromptInput>
-            </PromptInputProvider>
-          </div>
+                {/* Input Area - Centered */}
+                <div className="w-full">
+                  <PromptInputProvider>
+                    <PromptInput onSubmit={handleSubmit}>
+                      <PromptInputBody>
+                        <PromptInputTextarea
+                          ref={textareaRef}
+                          placeholder="Ask about your database..."
+                        />
+                      </PromptInputBody>
+                      <PromptInputFooter className="flex justify-end">
+                        <PromptInputSubmit status={status} />
+                      </PromptInputFooter>
+                    </PromptInput>
+                  </PromptInputProvider>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Chat Messages - Normal Layout */
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto">
+                <div className="max-w-6xl w-full mx-auto">
+                  <Conversation>
+                    <ConversationContent className="px-4 sm:px-6 lg:px-8 py-6">
+                      <div className="space-y-4">
+                        {messages.map((message, messageIndex) => {
+                          const isLastMessage =
+                            messageIndex === messages.length - 1;
+                          const isLastAssistantMessage =
+                            message.role === "assistant" && isLastMessage;
+
+                          const textParts = message.parts.filter(
+                            (p: any) => p.type === "text"
+                          );
+                          const toolParts = message.parts.filter(
+                            (p: any) => p.type !== "text"
+                          );
+
+                          return (
+                            <Fragment key={message.id}>
+                              {/* Render text parts */}
+                              {textParts.length > 0 && (
+                                <Message from={message.role}>
+                                  <MessageContent>
+                                    {textParts.map((part: any, index) => (
+                                      <Streamdown
+                                        isAnimating={status === "streaming"}
+                                        key={index}
+                                      >
+                                        {part.text}
+                                      </Streamdown>
+                                    ))}
+                                  </MessageContent>
+                                </Message>
+                              )}
+
+                              {/* Render tool parts */}
+                              {toolParts.map((part: any, i: number) => {
+                                const callId =
+                                  part.toolCallId || `${message.id}-tool-${i}`;
+                                return (
+                                  <Message key={callId} from="assistant">
+                                    <MessageContent>
+                                      {renderToolPart(part, callId)}
+                                    </MessageContent>
+                                  </Message>
+                                );
+                              })}
+
+                              {/* Toolbar for assistant */}
+                              {message.role === "assistant" && (
+                                <MessageToolbar>
+                                  <MessageActions>
+                                    {isLastAssistantMessage &&
+                                      status === "ready" && (
+                                        <MessageAction
+                                          onClick={() => regenerate()}
+                                          label="Regenerate"
+                                          tooltip="Regenerate response"
+                                        >
+                                          <RefreshCcwIcon className="size-4" />
+                                        </MessageAction>
+                                      )}
+                                    <MessageAction
+                                      label="Like"
+                                      onClick={() =>
+                                        setLiked((prev) => ({
+                                          ...prev,
+                                          [message.id]: !prev[message.id],
+                                        }))
+                                      }
+                                      tooltip="Like this response"
+                                    >
+                                      <ThumbsUpIcon
+                                        className="size-4"
+                                        fill={
+                                          liked[message.id]
+                                            ? "currentColor"
+                                            : "none"
+                                        }
+                                      />
+                                    </MessageAction>
+                                    <MessageAction
+                                      label="Dislike"
+                                      onClick={() =>
+                                        setDisliked((prev) => ({
+                                          ...prev,
+                                          [message.id]: !prev[message.id],
+                                        }))
+                                      }
+                                      tooltip="Dislike this response"
+                                    >
+                                      <ThumbsDownIcon
+                                        className="size-4"
+                                        fill={
+                                          disliked[message.id]
+                                            ? "currentColor"
+                                            : "none"
+                                        }
+                                      />
+                                    </MessageAction>
+                                    <MessageAction
+                                      onClick={() =>
+                                        handleCopy(
+                                          textParts
+                                            .map((p: any) => p.text)
+                                            .join("\n")
+                                        )
+                                      }
+                                      label="Copy"
+                                      tooltip="Copy to clipboard"
+                                    >
+                                      <CopyIcon className="size-4" />
+                                    </MessageAction>
+                                  </MessageActions>
+                                </MessageToolbar>
+                              )}
+                            </Fragment>
+                          );
+                        })}
+
+                        {/* Stream status */}
+                        {status === "streaming" && (
+                          <Message from="assistant">
+                            <MessageContent>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader>Thinking...</Loader>
+                              </div>
+                            </MessageContent>
+                          </Message>
+                        )}
+
+                        {/* Exporting state */}
+                        {isExporting && (
+                          <Message from="assistant">
+                            <MessageContent>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader>Preparing download...</Loader>
+                              </div>
+                            </MessageContent>
+                          </Message>
+                        )}
+                      </div>
+                    </ConversationContent>
+                    <ConversationScrollButton />
+                  </Conversation>
+                </div>
+              </div>
+
+              {/* Sticky Input at Bottom */}
+              <div className="">
+                <div className="max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                  <PromptInputProvider>
+                    <PromptInput onSubmit={handleSubmit}>
+                      <PromptInputBody>
+                        <PromptInputTextarea
+                          ref={textareaRef}
+                          placeholder="Ask a follow-up question..."
+                        />
+                      </PromptInputBody>
+                      <PromptInputFooter className="flex justify-end">
+                        <PromptInputSubmit status={status} />
+                      </PromptInputFooter>
+                    </PromptInput>
+                  </PromptInputProvider>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
-    </div>
+      <ChatSessionSidebar />
+    </SidebarProvider>
   );
 }
 
