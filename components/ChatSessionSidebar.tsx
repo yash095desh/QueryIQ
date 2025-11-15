@@ -1,6 +1,13 @@
 "use client";
 
-import { MessageSquare, Plus, Trash2, Clock, Loader2 } from "lucide-react";
+import {
+  MessageSquare,
+  Plus,
+  Trash2,
+  Clock,
+  Loader2,
+  PanelRight,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -86,7 +93,7 @@ export function ChatSessionSidebar() {
         setSessions((prev) => prev.filter((s) => s.id !== sessionToDelete));
 
         if (sessionToDelete === currentSessionId) {
-          window.location.href = `/project/${projectId}/chat`;
+          window.location.href = `/projects/${projectId}/chat`;
         }
       }
     } catch (error) {
@@ -97,97 +104,125 @@ export function ChatSessionSidebar() {
     }
   };
 
+  const formatDate = (date: Date) => {
+    const now = new Date();
+    const diff = now.getTime() - new Date(date).getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    if (days === 0) return "Today";
+    if (days === 1) return "Yesterday";
+    if (days < 7) return `${days} days ago`;
+    return new Date(date).toLocaleDateString();
+  };
+
   return (
     <>
-      <Sidebar
-        side="right"
-        className="
-            bg-white/10 dark:bg-black/20
-            backdrop-blur-xl
-            border border-white/10 dark:border-white/10
-            rounded-xl
-            shadow-md
-            transition-all  
-          "
-      >
-        <SidebarContent className="py-4">
-          <SidebarGroup>
-            <div className="px-3 flex items-center justify-between mb-4">
-              <SidebarGroupLabel className="font-semibold text-sm">
-                Chat History
-              </SidebarGroupLabel>
-              <Button size="sm" variant="ghost" className="h-8 w-8 p-0" asChild>
-                <Link href={`/projects/${projectId}/chat`}>
-                  <Plus className="h-4 w-4" />
-                </Link>
-              </Button>
-            </div>
+      {/* Floating Sidebar with its own provider */}
+      <div className="fixed right-0 top-0 z-50 pointer-events-none">
+          <Sidebar
+            side="right"
+            variant="floating" // Use floating variant
+            collapsible="offcanvas" // Use offcanvas for overlay behavior
+            className="
+              pointer-events-auto
+              top-1
+              h-[calc(100vh-1rem)] 
+              bg-background/95 
+              backdrop-blur-xl
+              rounded-xl
+              shadow-2xl
+              p-0
+            "
+          >
+            <SidebarHeader className="px-3 py-4 border-b border-border">
+              <div className="flex items-center justify-between">
+                <SidebarTrigger/>
+                <SidebarGroupLabel className="text-base font-semibold">
+                  Chat History
+                </SidebarGroupLabel>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 w-8 p-0"
+                  asChild
+                >
+                  <Link href={`/projects/${projectId}/chat`}>
+                    <Plus className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+            </SidebarHeader>
 
-            <SidebarGroupContent>
-              <ScrollArea className="h-[calc(100vh-200px)]">
-                <SidebarMenu className="gap-1 w-full">
-                  {loading ? (
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : sessions.length === 0 ? (
-                    <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-                      No chat history yet
-                    </div>
-                  ) : (
-                    sessions.map((session) => {
-                      const isActive = session.id === currentSessionId;
-                      return (
-                        <SidebarMenuItem key={session.id} className="w-full">
-                          <div className="group relative w-full">
-                            <SidebarMenuButton
-                              asChild
-                              className={`flex items-center gap-2 rounded-lg transition-all pr-8 w-full ${
-                                isActive
-                                  ? "bg-white/20 text-primary font-medium border border-white/20 shadow-sm"
-                                  : "hover:bg-white/10 text-foreground"
-                              }`}
-                            >
-                              <Link
-                                href={`/projects/${projectId}/chat?session=${session.id}`}
-                                className="flex items-center gap-2 min-w-0 w-full overflow-hidden"
-                              >
-                                <MessageSquare
-                                  className={`h-4 w-4 shrink-0 ${
+            <SidebarContent className="py-4">
+              <SidebarGroup>
+                <SidebarGroupContent>
+                  <ScrollArea className="h-[calc(100vh-16rem)]">
+                    <SidebarMenu className="gap-1 w-full px-3">
+                      {loading ? (
+                        <div className="flex items-center justify-center py-8">
+                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : sessions.length === 0 ? (
+                        <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+                          No chat history yet
+                        </div>
+                      ) : (
+                        sessions.map((session) => {
+                          const isActive = session.id === currentSessionId;
+                          return (
+                            <SidebarMenuItem key={session.id} className="w-full">
+                              <div className="group relative w-full">
+                                <SidebarMenuButton
+                                  asChild
+                                  className={`flex items-center gap-2 rounded-lg transition-all pr-8 w-full ${
                                     isActive
-                                      ? "text-primary"
-                                      : "text-muted-foreground"
+                                      ? "bg-primary/10 text-primary font-medium border border-primary/20"
+                                      : "hover:bg-accent text-foreground"
                                   }`}
-                                />
-                                <span className="text-xs truncate block flex-1 min-w-0">
-                                  {session.title}
-                                </span>
-                              </Link>
-                            </SidebarMenuButton>
+                                >
+                                  <Link
+                                    href={`/projects/${projectId}/chat?session=${session.id}`}
+                                    className="flex items-center gap-2 min-w-0 w-full overflow-hidden"
+                                  >
+                                    <MessageSquare
+                                      className={`h-4 w-4 shrink-0 ${
+                                        isActive
+                                          ? "text-primary"
+                                          : "text-muted-foreground"
+                                      }`}
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs truncate">
+                                        {session.title}
+                                      </p>
+                                    </div>
+                                  </Link>
+                                </SidebarMenuButton>
 
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                setSessionToDelete(session.id);
-                                setDeleteDialogOpen(true);
-                              }}
-                            >
-                              <Trash2 className="h-3 w-3 text-destructive" />
-                            </Button>
-                          </div>
-                        </SidebarMenuItem>
-                      );
-                    })
-                  )}
-                </SidebarMenu>
-              </ScrollArea>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-      </Sidebar>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    setSessionToDelete(session.id);
+                                    setDeleteDialogOpen(true);
+                                  }}
+                                >
+                                  <Trash2 className="h-3 w-3 text-destructive" />
+                                </Button>
+                              </div>
+                            </SidebarMenuItem>
+                          );
+                        })
+                      )}
+                    </SidebarMenu>
+                  </ScrollArea>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            </SidebarContent>
+          </Sidebar>
+      </div>
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>

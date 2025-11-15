@@ -82,7 +82,7 @@ function ChatPage() {
   const [disliked, setDisliked] = useState<Record<string, boolean>>({});
   const [sessionTitle, setSessionTitle] = useState<string>("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const {user} = useUser();
+  const { user } = useUser();
 
   const {
     messages,
@@ -240,7 +240,9 @@ function ChatPage() {
           case "output-available":
             const output = part.output as any;
             return (
-              <div className="space-y-3">
+              <div className="space-y-3 w-full overflow-hidden">
+                {" "}
+                {/* Add overflow-hidden */}
                 {output.truncated && (
                   <Alert className="border-orange-500/50 bg-orange-500/5">
                     <AlertTriangle className="h-4 w-4 text-orange-600" />
@@ -249,7 +251,6 @@ function ChatPage() {
                     </AlertDescription>
                   </Alert>
                 )}
-
                 <div className="flex items-center gap-2">
                   <Table2 className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-semibold">Query Results</span>
@@ -257,10 +258,13 @@ function ChatPage() {
                     {output.rowCount} rows
                   </Badge>
                 </div>
-
                 {output.results && output.results.length > 0 && (
-                  <div className="rounded-lg border overflow-hidden">
-                    <div className="overflow-x-auto">
+                  <div className="rounded-lg border overflow-hidden w-full">
+                    {" "}
+                    {/* Add w-full */}
+                    <div className="overflow-x-auto max-w-full">
+                      {" "}
+                      {/* Add max-w-full */}
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-muted/50 hover:bg-muted/50">
@@ -283,7 +287,7 @@ function ChatPage() {
                                   (value: any, cellIdx: number) => (
                                     <TableCell
                                       key={cellIdx}
-                                      className="font-mono text-xs max-w-xs truncate"
+                                      className="font-mono text-xs max-w-[200px] truncate" /* Set max width */
                                     >
                                       {value === null ? (
                                         <span className="text-muted-foreground italic">
@@ -307,7 +311,6 @@ function ChatPage() {
                     )}
                   </div>
                 )}
-
                 {output.pagination && (
                   <p className="text-xs text-muted-foreground">
                     Page {output.pagination.currentPage}
@@ -328,7 +331,6 @@ function ChatPage() {
             );
         }
       },
-
       "tool-executeAggregation": () => {
         switch (part.state) {
           case "input-streaming":
@@ -603,6 +605,8 @@ function ChatPage() {
 
   return (
     <SidebarProvider
+      defaultOpen={false}
+      className="group/sidebar"
       style={
         {
           "--sidebar-width": "20rem",
@@ -610,7 +614,7 @@ function ChatPage() {
         } as React.CSSProperties
       }
     >
-      <div className="flex flex-col min-h-screen w-full bg-transparent backdrop-blur-md dark:bg-zinc-900/30">
+      <div className="flex flex-col min-h-screen flex-1 min-w-0 bg-transparent backdrop-blur-md dark:bg-zinc-900/30">
         {/* Top Header */}
         <div className="border-b border-border p-3 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -618,9 +622,11 @@ function ChatPage() {
               <>
                 <MessageSquare className="h-5 w-5 text-muted-foreground" />
                 <div>
-                  <h1 className="text-sm font-medium truncate max-w-md">
-                    {sessionTitle || `Welcome back, ${user?.firstName}`}
-                  </h1>
+                  {user?.firstName && (
+                    <h1 className="text-sm font-medium truncate max-w-md">
+                      {sessionTitle || `Welcome back, ${user?.firstName}`}
+                    </h1>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     Session: {sessionId.slice(0, 8)}...
                   </p>
@@ -638,10 +644,10 @@ function ChatPage() {
           <SidebarTrigger />
         </div>
 
-        {/* Main Content Area */}
+        {/* Main Content */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {messages.length === 0 ? (
-            /* Empty State - Centered Layout */
+            /* Empty State */
             <div className="flex-1 flex flex-col items-center justify-center px-4">
               <div className="w-full max-w-3xl space-y-8">
                 {/* Welcome Message */}
@@ -681,32 +687,30 @@ function ChatPage() {
                   ))}
                 </div>
 
-                {/* Input Area - Centered */}
-                <div className="w-full">
-                  <PromptInputProvider>
-                    <PromptInput onSubmit={handleSubmit}>
-                      <PromptInputBody>
-                        <PromptInputTextarea
-                          ref={textareaRef}
-                          placeholder="Ask about your database..."
-                        />
-                      </PromptInputBody>
-                      <PromptInputFooter className="flex justify-end">
-                        <PromptInputSubmit status={status} />
-                      </PromptInputFooter>
-                    </PromptInput>
-                  </PromptInputProvider>
-                </div>
+                {/* Input Area */}
+                <PromptInputProvider>
+                  <PromptInput onSubmit={handleSubmit}>
+                    <PromptInputBody>
+                      <PromptInputTextarea
+                        ref={textareaRef}
+                        placeholder="Ask about your database..."
+                      />
+                    </PromptInputBody>
+                    <PromptInputFooter className="flex justify-end">
+                      <PromptInputSubmit status={status} />
+                    </PromptInputFooter>
+                  </PromptInput>
+                </PromptInputProvider>
               </div>
             </div>
           ) : (
-            /* Chat Messages - Normal Layout */
-            <div className="flex-1 flex flex-col overflow-hidden">
+            /* Chat Messages */
+            <>
               <div className="flex-1 overflow-y-auto">
-                <div className="max-w-6xl w-full mx-auto">
+                <div className="max-w-5xl mx-auto">
                   <Conversation>
                     <ConversationContent className="px-4 sm:px-6 lg:px-8 py-6">
-                      <div className="space-y-4">
+                      <div className="space-y-2">
                         {messages.map((message, messageIndex) => {
                           const isLastMessage =
                             messageIndex === messages.length - 1;
@@ -722,7 +726,7 @@ function ChatPage() {
 
                           return (
                             <Fragment key={message.id}>
-                              {/* Render text parts */}
+                              {/* Text parts */}
                               {textParts.length > 0 && (
                                 <Message from={message.role}>
                                   <MessageContent>
@@ -738,7 +742,7 @@ function ChatPage() {
                                 </Message>
                               )}
 
-                              {/* Render tool parts */}
+                              {/* Tool parts */}
                               {toolParts.map((part: any, i: number) => {
                                 const callId =
                                   part.toolCallId || `${message.id}-tool-${i}`;
@@ -751,7 +755,7 @@ function ChatPage() {
                                 );
                               })}
 
-                              {/* Toolbar for assistant */}
+                              {/* Toolbar */}
                               {message.role === "assistant" && (
                                 <MessageToolbar>
                                   <MessageActions>
@@ -851,9 +855,9 @@ function ChatPage() {
                 </div>
               </div>
 
-              {/* Sticky Input at Bottom */}
-              <div className="">
-                <div className="max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4">
+              {/* Sticky Input */}
+              <div className="shrink-0">
+                <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
                   <PromptInputProvider>
                     <PromptInput onSubmit={handleSubmit}>
                       <PromptInputBody>
@@ -869,7 +873,7 @@ function ChatPage() {
                   </PromptInputProvider>
                 </div>
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>
