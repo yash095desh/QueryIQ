@@ -4,9 +4,7 @@ import {
   MessageSquare,
   Plus,
   Trash2,
-  Clock,
   Loader2,
-  PanelRight,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
@@ -63,7 +61,7 @@ export function ChatSessionSidebar() {
     if (projectId) {
       loadSessions();
     }
-  }, [projectId]);
+  }, [projectId,currentSessionId]);
 
   const loadSessions = async () => {
     try {

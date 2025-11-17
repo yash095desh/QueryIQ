@@ -12,7 +12,6 @@ import * as XLSX from "xlsx";
 import {
   Conversation,
   ConversationContent,
-  ConversationEmptyState,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
 import {
@@ -31,6 +30,22 @@ import {
   PromptInputSubmit,
   PromptInputTextarea,
 } from "@/components/ai-elements/prompt-input";
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from "@/components/ai-elements/tool";
+import {
+  Confirmation,
+  ConfirmationAccepted,
+  ConfirmationAction,
+  ConfirmationActions,
+  ConfirmationRejected,
+  ConfirmationRequest,
+  ConfirmationTitle,
+} from "@/components/ai-elements/confirmation";
 import { CodeBlock } from "@/components/ai-elements/code-block";
 import { Loader } from "@/components/ai-elements/loader";
 
@@ -61,6 +76,8 @@ import {
   ThumbsUpIcon,
   ThumbsDownIcon,
   MessageSquare,
+  CheckIcon,
+  XIcon,
 } from "lucide-react";
 import { Streamdown } from "streamdown";
 import axios from "axios";
@@ -69,7 +86,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { useUser } from "@clerk/nextjs";
 
 function ChatPage() {
-  const params = useParams();
+    const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = params.projectId as string;
@@ -81,8 +98,16 @@ function ChatPage() {
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [disliked, setDisliked] = useState<Record<string, boolean>>({});
   const [sessionTitle, setSessionTitle] = useState<string>("");
+  const [isLoadingSession, setIsLoadingSession] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { user } = useUser();
+  
+  // Track if URL update came from our onFinish callback
+  const isUpdatingUrlRef = useRef(false);
+  const loadedSessionRef = useRef<string | null>(null);
+
+    // Generate a stable chat ID that doesn't change during the session
+  const [chatId] = useState(() => sessionId || `new-chat-${Date.now()}`);
 
   const {
     messages,
@@ -92,6 +117,7 @@ function ChatPage() {
     regenerate,
     setMessages,
   } = useChat({
+    id: chatId ,
     transport: new DefaultChatTransport({
       api: `/api/chat/${projectId}`,
       prepareSendMessagesRequest({ messages, id }) {
@@ -107,11 +133,22 @@ function ChatPage() {
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
 
     onFinish: ({ message, messages }) => {
-      console.log("finish", { message, messages });
-      if ((message.metadata as any)?.sessionId && !sessionId) {
+      console.log("finish",messages, messages);
+      const newSessionId = (message.metadata as any)?.sessionId;
+      
+      // Only update URL if we don't have a sessionId yet and we received a new one
+      if (newSessionId && !sessionId) {
+        isUpdatingUrlRef.current = true;
+        loadedSessionRef.current = newSessionId;
+        
         const url = new URL(window.location.href);
-        url.searchParams.set("session", (message.metadata as any).sessionId);
+        url.searchParams.set("session", newSessionId);
         router.replace(url.pathname + url.search, { scroll: false });
+        
+        // Reset flag after a short delay
+        setTimeout(() => {
+          isUpdatingUrlRef.current = false;
+        }, 100);
       }
     },
 
@@ -123,6 +160,7 @@ function ChatPage() {
       if (toolCall.dynamic) return;
 
       if (toolCall.toolName === "generateExcel") {
+        console?.log("ToolCall object:", toolCall);
         await handleExcelExport(toolCall);
       }
     },
@@ -131,9 +169,9 @@ function ChatPage() {
   async function handleExcelExport(toolCall: any) {
     setIsExporting(true);
     try {
-      const { query, filename, sheetName } = toolCall.args;
+      const { query, filename, sheetName } = toolCall.input;
 
-      const response = await fetch("/api/execute-export", {
+      const response = await fetch("/api/chat/execute-export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, query }),
@@ -181,385 +219,362 @@ function ChatPage() {
 
   const renderToolPart = (part: any, callId: string) => {
     const toolRenderers: Record<string, any> = {
-      "tool-getRowCount": () => {
-        switch (part.state) {
-          case "input-streaming":
-          case "input-available":
-            return (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader>Counting rows...</Loader>
-              </div>
-            );
-          case "output-available":
-            const output = part.output as any;
-            return (
-              <Card className="border-primary/20 bg-primary/5">
-                <div className="p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <BarChart3 className="h-4 w-4 text-primary" />
-                    <span className="font-semibold text-sm">Row Count</span>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-bold text-primary">
-                      {output.count?.toLocaleString()}
-                    </span>
-                    <span className="text-sm text-muted-foreground">rows</span>
-                  </div>
-                  {output.recommendation && (
-                    <p className="text-sm text-muted-foreground">
-                      {output.recommendation}
-                    </p>
-                  )}
-                </div>
-              </Card>
-            );
-          case "output-error":
-            return (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{part.errorText}</AlertDescription>
-              </Alert>
-            );
-        }
-      },
+      "tool-getRowCount": () => (
+        <Tool defaultOpen={part.state === "output-available"}>
+          <ToolHeader state={part.state} title="Row Count" type={part.type} />
+          <ToolContent>
+            {part.state === "output-available" && (
+              <ToolOutput
+                errorText={part.errorText}
+                output={
+                  <Card className="border-primary/20 bg-primary/5">
+                    <div className="p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <BarChart3 className="h-4 w-4 text-primary" />
+                        <span className="font-semibold text-sm">Row Count</span>
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-bold text-primary">
+                          {part.output.count?.toLocaleString()}
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          rows
+                        </span>
+                      </div>
+                      {part.output.recommendation && (
+                        <p className="text-sm text-muted-foreground">
+                          {part.output.recommendation}
+                        </p>
+                      )}
+                    </div>
+                  </Card>
+                }
+              />
+            )}
+            {part.state === "output-error" && (
+              <ToolOutput errorText={part.errorText} output={undefined} />
+            )}
+          </ToolContent>
+        </Tool>
+      ),
 
-      "tool-executeQuery": () => {
-        switch (part.state) {
-          case "input-streaming":
-          case "input-available":
-            const input = part.input as any;
-            return (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader>
-                  {input?.explanation
-                    ? `Executing: ${input.explanation}`
-                    : "Executing query..."}
-                </Loader>
-              </div>
-            );
-          case "output-available":
-            const output = part.output as any;
-            return (
-              <div className="space-y-3 w-full overflow-hidden">
-                {" "}
-                {/* Add overflow-hidden */}
-                {output.truncated && (
-                  <Alert className="border-orange-500/50 bg-orange-500/5">
-                    <AlertTriangle className="h-4 w-4 text-orange-600" />
-                    <AlertDescription className="text-orange-900 dark:text-orange-100">
-                      {output.warning}
-                    </AlertDescription>
-                  </Alert>
-                )}
-                <div className="flex items-center gap-2">
-                  <Table2 className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-semibold">Query Results</span>
-                  <Badge variant="secondary" className="ml-auto">
-                    {output.rowCount} rows
-                  </Badge>
-                </div>
-                {output.results && output.results.length > 0 && (
-                  <div className="rounded-lg border overflow-hidden w-full">
-                    {" "}
-                    {/* Add w-full */}
-                    <div className="overflow-x-auto max-w-full">
-                      {" "}
-                      {/* Add max-w-full */}
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/50 hover:bg-muted/50">
-                            {Object.keys(output.results[0]).map((key) => (
-                              <TableHead
-                                key={key}
-                                className="font-semibold whitespace-nowrap"
-                              >
-                                {key}
-                              </TableHead>
-                            ))}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {output.results
-                            .slice(0, 10)
-                            .map((row: any, idx: number) => (
-                              <TableRow key={idx}>
-                                {Object.values(row).map(
-                                  (value: any, cellIdx: number) => (
-                                    <TableCell
-                                      key={cellIdx}
-                                      className="font-mono text-xs max-w-[200px] truncate" /* Set max width */
+      "tool-executeQuery": () => (
+        <Tool defaultOpen={part.state === "output-available"}>
+          <ToolHeader
+            state={part.state}
+            title="Execute Query"
+            type={part.type}
+          />
+          <ToolContent>
+            {(part.state === "input-streaming" ||
+              part.state === "input-available") && (
+              <ToolInput
+                input={
+                  part.input?.explanation
+                    ? { explanation: part.input.explanation }
+                    : {}
+                }
+              />
+            )}
+            {part.state === "output-available" && (
+              <ToolOutput
+                errorText={part.errorText}
+                output={
+                  <div className="space-y-3 w-full overflow-hidden">
+                    {part.output.truncated && (
+                      <Alert className="border-orange-500/50 bg-orange-500/5">
+                        <AlertTriangle className="h-4 w-4 text-orange-600" />
+                        <AlertDescription className="text-orange-900 dark:text-orange-100">
+                          {part.output.warning}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Table2 className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-semibold">
+                        Query Results
+                      </span>
+                      <Badge variant="secondary" className="ml-auto">
+                        {part.output.rowCount} rows
+                      </Badge>
+                    </div>
+                    {part.output.results && part.output.results.length > 0 && (
+                      <div className="rounded-lg border overflow-hidden w-full">
+                        <div className="overflow-x-auto max-w-full">
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="bg-muted/50 hover:bg-muted/50">
+                                {Object.keys(part.output.results[0]).map(
+                                  (key) => (
+                                    <TableHead
+                                      key={key}
+                                      className="font-semibold whitespace-nowrap"
                                     >
-                                      {value === null ? (
-                                        <span className="text-muted-foreground italic">
-                                          null
-                                        </span>
-                                      ) : (
-                                        String(value)
-                                      )}
-                                    </TableCell>
+                                      {key}
+                                    </TableHead>
                                   )
                                 )}
                               </TableRow>
-                            ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                    {output.results.length > 10 && (
-                      <div className="px-4 py-2 text-xs text-muted-foreground bg-muted/30 border-t text-center">
-                        Showing first 10 of {output.results.length} rows
+                            </TableHeader>
+                            <TableBody>
+                              {part.output.results
+                                .slice(0, 10)
+                                .map((row: any, idx: number) => (
+                                  <TableRow key={idx}>
+                                    {Object.values(row).map(
+                                      (value: any, cellIdx: number) => (
+                                        <TableCell
+                                          key={cellIdx}
+                                          className="font-mono text-xs max-w-[200px] truncate"
+                                        >
+                                          {value === null ? (
+                                            <span className="text-muted-foreground italic">
+                                              null
+                                            </span>
+                                          ) : (
+                                            String(value)
+                                          )}
+                                        </TableCell>
+                                      )
+                                    )}
+                                  </TableRow>
+                                ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                        {part.output.results.length > 10 && (
+                          <div className="px-4 py-2 text-xs text-muted-foreground bg-muted/30 border-t text-center">
+                            Showing first 10 of {part.output.results.length}{" "}
+                            rows
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                )}
-                {output.pagination && (
-                  <p className="text-xs text-muted-foreground">
-                    Page {output.pagination.currentPage}
-                    {output.pagination.totalEstimated &&
-                      ` of ~${Math.ceil(
-                        output.pagination.totalEstimated / 50
-                      )}`}
-                  </p>
-                )}
-              </div>
-            );
-          case "output-error":
-            return (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{part.errorText}</AlertDescription>
-              </Alert>
-            );
-        }
-      },
-      "tool-executeAggregation": () => {
-        switch (part.state) {
-          case "input-streaming":
-          case "input-available":
-            return (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader>Computing aggregation...</Loader>
-              </div>
-            );
-          case "output-available":
-            const output = part.output as any;
-            return (
-              <Card>
-                <div className="p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <BarChart3 className="h-4 w-4 text-primary" />
-                    <span className="font-semibold text-sm">
-                      Summary Statistics
-                    </span>
-                  </div>
-                  <CodeBlock
-                    language="json"
-                    code={JSON.stringify(output.results, null, 2)}
-                  />
-                </div>
-              </Card>
-            );
-          case "output-error":
-            return (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{part.errorText}</AlertDescription>
-              </Alert>
-            );
-        }
-      },
+                }
+              />
+            )}
+            {part.state === "output-error" && (
+              <ToolOutput errorText={part.errorText} output={undefined} />
+            )}
+          </ToolContent>
+        </Tool>
+      ),
 
-      "tool-getSchema": () => {
-        switch (part.state) {
-          case "input-streaming":
-          case "input-available":
-            return (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader>Loading database schema...</Loader>
-              </div>
-            );
-          case "output-available":
-            const output = part.output as any;
-            return (
-              <Card>
-                <div className="p-4 space-y-3">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Database className="h-4 w-4 text-primary" />
-                    <span className="font-semibold text-sm">
-                      Database Schema
-                    </span>
-                    <Badge variant="secondary">
-                      {output.tableCount} tables
-                    </Badge>
-                  </div>
-                  <details className="group">
-                    <summary className="cursor-pointer text-sm text-primary hover:underline list-none flex items-center gap-1">
-                      <span className="group-open:rotate-90 transition-transform inline-block">
-                        ▶
-                      </span>
-                      View schema details
-                    </summary>
-                    <div className="mt-3">
+      "tool-executeAggregation": () => (
+        <Tool defaultOpen={part.state === "output-available"}>
+          <ToolHeader
+            state={part.state}
+            title="Execute Aggregation"
+            type={part.type}
+          />
+          <ToolContent>
+            {part.state === "output-available" && (
+              <ToolOutput
+                errorText={part.errorText}
+                output={
+                  <Card>
+                    <div className="p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <BarChart3 className="h-4 w-4 text-primary" />
+                        <span className="font-semibold text-sm">
+                          Summary Statistics
+                        </span>
+                      </div>
                       <CodeBlock
                         language="json"
-                        code={JSON.stringify(output, null, 2)}
+                        code={JSON.stringify(part.output.results, null, 2)}
                       />
                     </div>
-                  </details>
-                </div>
-              </Card>
-            );
-          case "output-error":
-            return (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{part.errorText}</AlertDescription>
-              </Alert>
-            );
-        }
-      },
-
-      "tool-askForConfirmation": () => {
-        switch (part.state) {
-          case "input-streaming":
-            return (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader>Awaiting confirmation...</Loader>
-              </div>
-            );
-          case "input-available":
-            const input = part.input as any;
-            return (
-              <Card className="border-yellow-500/50 bg-yellow-500/5">
-                <div className="p-4 space-y-4">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                    <span className="font-semibold text-sm">
-                      Confirmation Required
-                    </span>
-                  </div>
-
-                  <p className="text-sm">{input.message}</p>
-
-                  {input.queryPreview && (
-                    <CodeBlock language="sql" code={input.queryPreview} />
-                  )}
-
-                  {input.estimatedRows && (
-                    <p className="text-sm text-muted-foreground">
-                      Estimated rows: {input.estimatedRows.toLocaleString()}
-                    </p>
-                  )}
-
-                  {input.alternatives && input.alternatives.length > 0 && (
-                    <div className="text-sm space-y-2">
-                      <p className="font-medium">Alternatives:</p>
-                      <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                        {input.alternatives.map((alt: string, i: number) => (
-                          <li key={i}>{alt}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    <Button
-                      onClick={() =>
-                        addToolOutput({
-                          tool: "askForConfirmation",
-                          toolCallId: callId,
-                          output: { confirmed: true },
-                        })
-                      }
-                      size="sm"
-                      className="bg-green-600 hover:bg-green-700"
-                    >
-                      <CheckCircle2 className="h-4 w-4 mr-2" />
-                      Proceed
-                    </Button>
-                    <Button
-                      onClick={() =>
-                        addToolOutput({
-                          tool: "askForConfirmation",
-                          toolCallId: callId,
-                          output: { confirmed: false },
-                        })
-                      }
-                      size="sm"
-                      variant="destructive"
-                    >
-                      <AlertCircle className="h-4 w-4 mr-2" />
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            );
-          case "output-available":
-            const output = part.output as any;
-            return (
-              <p className="text-sm text-muted-foreground italic">
-                {output.confirmed
-                  ? "✓ User confirmed the operation"
-                  : "✗ User cancelled the operation"}
-              </p>
-            );
-          case "output-error":
-            return (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{part.errorText}</AlertDescription>
-              </Alert>
-            );
-        }
-      },
-
-      "tool-generateExcel": () => {
-        switch (part.state) {
-          case "input-streaming":
-          case "input-available":
-            return (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader>Generating Excel file...</Loader>
-              </div>
-            );
-          case "output-available":
-            const output = part.output as any;
-            return (
-              <Alert
-                variant={output.success ? "default" : "destructive"}
-                className={
-                  output.success
-                    ? "border-green-500/50 bg-green-500/5"
-                    : undefined
+                  </Card>
                 }
-              >
-                {output.success ? (
-                  <>
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    <AlertDescription className="flex items-center gap-2">
-                      <FileSpreadsheet className="h-4 w-4" />
-                      <span>{output.message}</span>
-                    </AlertDescription>
-                  </>
-                ) : (
-                  <>
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{output.error}</AlertDescription>
-                  </>
-                )}
-              </Alert>
-            );
-          case "output-error":
-            return (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  Export failed: {part.errorText}
-                </AlertDescription>
-              </Alert>
-            );
-        }
-      },
+              />
+            )}
+            {part.state === "output-error" && (
+              <ToolOutput errorText={part.errorText} output={undefined} />
+            )}
+          </ToolContent>
+        </Tool>
+      ),
+
+      "tool-getSchema": () => (
+        <Tool defaultOpen={part.state === "output-available"}>
+          <ToolHeader
+            state={part.state}
+            title="Database Schema"
+            type={part.type}
+          />
+          <ToolContent>
+            {part.state === "output-available" && (
+              <ToolOutput
+                errorText={part.errorText}
+                output={
+                  <Card>
+                    <div className="p-4 space-y-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Database className="h-4 w-4 text-primary" />
+                        <span className="font-semibold text-sm">
+                          Database Schema
+                        </span>
+                        <Badge variant="secondary">
+                          {part.output.tableCount} tables
+                        </Badge>
+                      </div>
+                      <details className="group">
+                        <summary className="cursor-pointer text-sm text-primary hover:underline list-none flex items-center gap-1">
+                          <span className="group-open:rotate-90 transition-transform inline-block">
+                            ▶
+                          </span>
+                          View schema details
+                        </summary>
+                        <div className="mt-3">
+                          <CodeBlock
+                            language="json"
+                            code={JSON.stringify(part.output, null, 2)}
+                          />
+                        </div>
+                      </details>
+                    </div>
+                  </Card>
+                }
+              />
+            )}
+            {part.state === "output-error" && (
+              <ToolOutput errorText={part.errorText} output={undefined} />
+            )}
+          </ToolContent>
+        </Tool>
+      ),
+
+      "tool-askForConfirmation": () => (
+        <Tool defaultOpen>
+          <ToolHeader
+            state={part.state}
+            title="Confirmation Required"
+            type={part.type}
+          />
+          <ToolContent>
+            <ToolInput input={part.input} />
+            <Confirmation
+              approval={
+                part.state === "output-available"
+                  ? { id: callId, approved: part.output?.confirmed }
+                  : undefined
+              }
+              state={
+                part.state === "input-available"
+                  ? "input-available"
+                  : part.state === "output-available"
+                  ? "output-available"
+                  : "input-available"
+              }
+            >
+              <ConfirmationTitle>
+                <ConfirmationRequest>
+                  {part.input?.message || "Do you want to proceed?"}
+                </ConfirmationRequest>
+                <ConfirmationAccepted>
+                  <CheckIcon className="size-4 text-green-600 dark:text-green-400" />
+                  <span>Confirmed</span>
+                </ConfirmationAccepted>
+                <ConfirmationRejected>
+                  <XIcon className="size-4 text-destructive" />
+                  <span>Cancelled</span>
+                </ConfirmationRejected>
+              </ConfirmationTitle>
+              {part.state === "input-available" && (
+                <ConfirmationActions>
+                  <ConfirmationAction
+                    onClick={() =>
+                      addToolOutput({
+                        tool: "askForConfirmation",
+                        toolCallId: callId,
+                        output: { confirmed: false },
+                      })
+                    }
+                    variant="outline"
+                  >
+                    <XIcon className="h-4 w-4 mr-2" />
+                    Cancel
+                  </ConfirmationAction>
+                  <ConfirmationAction
+                    onClick={() =>
+                      addToolOutput({
+                        tool: "askForConfirmation",
+                        toolCallId: callId,
+                        output: { confirmed: true },
+                      })
+                    }
+                    variant="default"
+                  >
+                    <CheckIcon className="h-4 w-4 mr-2" />
+                    Proceed
+                  </ConfirmationAction>
+                </ConfirmationActions>
+              )}
+            </Confirmation>
+            {part.input?.queryPreview && (
+              <div className="mt-3">
+                <CodeBlock language="sql" code={part.input.queryPreview} />
+              </div>
+            )}
+            {part.input?.estimatedRows && (
+              <p className="text-sm text-muted-foreground mt-2">
+                Estimated rows: {part.input.estimatedRows.toLocaleString()}
+              </p>
+            )}
+            {part.input?.alternatives && part.input.alternatives.length > 0 && (
+              <div className="text-sm space-y-2 mt-3">
+                <p className="font-medium">Alternatives:</p>
+                <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                  {part.input.alternatives.map((alt: string, i: number) => (
+                    <li key={i}>{alt}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </ToolContent>
+        </Tool>
+      ),
+
+      "tool-generateExcel": () => (
+        <Tool defaultOpen={part.state === "output-available"}>
+          <ToolHeader
+            state={part.state}
+            title="Generate Excel"
+            type={part.type}
+          />
+          <ToolContent>
+            {part.state === "output-available" && (
+              <ToolOutput
+                errorText={part.errorText}
+                output={
+                  part.output.success ? (
+                    <Alert className="border-green-500/50 bg-green-500/5">
+                      <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      <AlertDescription className="flex items-center gap-2">
+                        <FileSpreadsheet className="h-4 w-4" />
+                        <span>{part.output.message}</span>
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{part.output.error}</AlertDescription>
+                    </Alert>
+                  )
+                }
+              />
+            )}
+            {part.state === "output-error" && (
+              <ToolOutput
+                errorText={`Export failed: ${part.errorText}`}
+                output={undefined}
+              />
+            )}
+          </ToolContent>
+        </Tool>
+      ),
     };
 
     const renderer = toolRenderers[part.type];
@@ -578,30 +593,59 @@ function ChatPage() {
     }
   };
 
-  const loadMessages = async () => {
-    try {
-      const response = await axios.get(
-        `/api/chat/${projectId}?session=${sessionId}`
-      );
-      if (response.status === 200) {
-        setMessages(response.data.messages);
-        setSessionTitle(response.data.title || "Chat Session");
-      }
-    } catch (error) {
-      console.log(
-        "Error while fetching session messages",
-        (error as Error).message
-      );
-    }
-  };
-
+  // Load messages when sessionId changes from URL navigation (not from our own URL update)
   useEffect(() => {
-    if (projectId && sessionId) {
-      loadMessages();
-    } else {
+    const loadSession = async () => {
+      // Don't load if:
+      // 1. No sessionId
+      // 2. We just updated the URL ourselves (new session being created)
+      // 3. We already loaded this session
+      // 4. We already have messages (ongoing conversation)
+      if (
+        !sessionId || 
+        isUpdatingUrlRef.current || 
+        sessionId === loadedSessionRef.current ||
+        messages.length > 0
+      ) {
+        if (isUpdatingUrlRef.current && sessionId) {
+          loadedSessionRef.current = sessionId;
+        }
+        return;
+      }
+
+      setIsLoadingSession(true);
+      try {
+        const response = await axios.get(
+          `/api/chat/${projectId}?session=${sessionId}`
+        );
+        
+        if (response.status === 200) {
+          console?.log("session messages:",response?.data?.messages)
+          setMessages(response.data.messages || []);
+          setSessionTitle(response.data.title || "Chat Session");
+          loadedSessionRef.current = sessionId;
+        }
+      } catch (error) {
+        console.error("Error loading session:", error);
+      } finally {
+        setIsLoadingSession(false);
+      }
+    };
+
+    loadSession();
+  }, [sessionId, projectId, setMessages, messages.length]);
+
+  // Clear session when there's no sessionId (new chat)
+  useEffect(() => {
+    if (!sessionId && loadedSessionRef.current) {
       setSessionTitle("");
+      loadedSessionRef.current = null;
+      // Only clear messages if we're transitioning from a session to no session
+      if (messages.length > 0) {
+        setMessages([]);
+      }
     }
-  }, [sessionId, projectId]);
+  }, [sessionId, messages.length, setMessages]);
 
   return (
     <SidebarProvider
@@ -710,7 +754,7 @@ function ChatPage() {
                 <div className="max-w-5xl mx-auto">
                   <Conversation>
                     <ConversationContent className="px-4 sm:px-6 lg:px-8 py-6">
-                      <div className="space-y-2">
+                      <div className="space-y-4">
                         {messages.map((message, messageIndex) => {
                           const isLastMessage =
                             messageIndex === messages.length - 1;
@@ -726,124 +770,137 @@ function ChatPage() {
 
                           return (
                             <Fragment key={message.id}>
-                              {/* Text parts */}
-                              {textParts.length > 0 && (
+                              {/* User Message */}
+                              {message.role === "user" && (
                                 <Message from={message.role}>
                                   <MessageContent>
                                     {textParts.map((part: any, index) => (
-                                      <Streamdown
-                                        isAnimating={status === "streaming"}
-                                        key={index}
-                                      >
-                                        {part.text}
-                                      </Streamdown>
+                                      <div key={index}>{part.text}</div>
                                     ))}
                                   </MessageContent>
                                 </Message>
                               )}
 
-                              {/* Tool parts */}
-                              {toolParts.map((part: any, i: number) => {
-                                const callId =
-                                  part.toolCallId || `${message.id}-tool-${i}`;
-                                return (
-                                  <Message key={callId} from="assistant">
-                                    <MessageContent>
-                                      {renderToolPart(part, callId)}
-                                    </MessageContent>
-                                  </Message>
-                                );
-                              })}
-
-                              {/* Toolbar */}
+                              {/* Assistant Response Section */}
                               {message.role === "assistant" && (
-                                <MessageToolbar>
-                                  <MessageActions>
-                                    {isLastAssistantMessage &&
-                                      status === "ready" && (
-                                        <MessageAction
-                                          onClick={() => regenerate()}
-                                          label="Regenerate"
-                                          tooltip="Regenerate response"
-                                        >
-                                          <RefreshCcwIcon className="size-4" />
-                                        </MessageAction>
-                                      )}
-                                    <MessageAction
-                                      label="Like"
-                                      onClick={() =>
-                                        setLiked((prev) => ({
-                                          ...prev,
-                                          [message.id]: !prev[message.id],
-                                        }))
-                                      }
-                                      tooltip="Like this response"
-                                    >
-                                      <ThumbsUpIcon
-                                        className="size-4"
-                                        fill={
-                                          liked[message.id]
-                                            ? "currentColor"
-                                            : "none"
+                                <>
+                                  {/* Tool parts - Show first */}
+                                  {toolParts.length > 0 && (
+                                    <div className="space-y-2">
+                                      {toolParts.map((part: any, i: number) => {
+                                        const callId =
+                                          part.toolCallId ||
+                                          `${message.id}-tool-${i}`;
+                                        return (
+                                          <Fragment key={callId}>
+                                            {renderToolPart(part, callId)}
+                                          </Fragment>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+
+                                  {/* Text message - Show after tools */}
+                                  {textParts.length > 0 && (
+                                    <Message from={message.role}>
+                                      <MessageContent>
+                                        {textParts.map((part: any, index) => (
+                                          <Streamdown
+                                            isAnimating={
+                                              status === "streaming" &&
+                                              isLastMessage
+                                            }
+                                            key={index}
+                                          >
+                                            {part.text}
+                                          </Streamdown>
+                                        ))}
+                                      </MessageContent>
+                                    </Message>
+                                  )}
+
+                                  {/* Toolbar - Show last */}
+                                  <MessageToolbar>
+                                    <MessageActions>
+                                      {isLastAssistantMessage &&
+                                        status === "ready" && (
+                                          <MessageAction
+                                            onClick={() => regenerate()}
+                                            label="Regenerate"
+                                            tooltip="Regenerate response"
+                                          >
+                                            <RefreshCcwIcon className="size-4" />
+                                          </MessageAction>
+                                        )}
+                                      <MessageAction
+                                        label="Like"
+                                        onClick={() =>
+                                          setLiked((prev) => ({
+                                            ...prev,
+                                            [message.id]: !prev[message.id],
+                                          }))
                                         }
-                                      />
-                                    </MessageAction>
-                                    <MessageAction
-                                      label="Dislike"
-                                      onClick={() =>
-                                        setDisliked((prev) => ({
-                                          ...prev,
-                                          [message.id]: !prev[message.id],
-                                        }))
-                                      }
-                                      tooltip="Dislike this response"
-                                    >
-                                      <ThumbsDownIcon
-                                        className="size-4"
-                                        fill={
-                                          disliked[message.id]
-                                            ? "currentColor"
-                                            : "none"
+                                        tooltip="Like this response"
+                                      >
+                                        <ThumbsUpIcon
+                                          className="size-4"
+                                          fill={
+                                            liked[message.id]
+                                              ? "currentColor"
+                                              : "none"
+                                          }
+                                        />
+                                      </MessageAction>
+                                      <MessageAction
+                                        label="Dislike"
+                                        onClick={() =>
+                                          setDisliked((prev) => ({
+                                            ...prev,
+                                            [message.id]: !prev[message.id],
+                                          }))
                                         }
-                                      />
-                                    </MessageAction>
-                                    <MessageAction
-                                      onClick={() =>
-                                        handleCopy(
-                                          textParts
-                                            .map((p: any) => p.text)
-                                            .join("\n")
-                                        )
-                                      }
-                                      label="Copy"
-                                      tooltip="Copy to clipboard"
-                                    >
-                                      <CopyIcon className="size-4" />
-                                    </MessageAction>
-                                  </MessageActions>
-                                </MessageToolbar>
+                                        tooltip="Dislike this response"
+                                      >
+                                        <ThumbsDownIcon
+                                          className="size-4"
+                                          fill={
+                                            disliked[message.id]
+                                              ? "currentColor"
+                                              : "none"
+                                          }
+                                        />
+                                      </MessageAction>
+                                      <MessageAction
+                                        onClick={() =>
+                                          handleCopy(
+                                            textParts
+                                              .map((p: any) => p.text)
+                                              .join("\n")
+                                          )
+                                        }
+                                        label="Copy"
+                                        tooltip="Copy to clipboard"
+                                      >
+                                        <CopyIcon className="size-4" />
+                                      </MessageAction>
+                                    </MessageActions>
+                                  </MessageToolbar>
+                                </>
                               )}
                             </Fragment>
                           );
                         })}
 
-                        {/* Stream status */}
-                        {status === "streaming" && (
+                        {/* Single Loader - Only show one at a time */}
+                        {(status === "streaming" || isExporting) && (
                           <Message from="assistant">
                             <MessageContent>
                               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <Loader>Thinking...</Loader>
-                              </div>
-                            </MessageContent>
-                          </Message>
-                        )}
-
-                        {/* Exporting state */}
-                        {isExporting && (
-                          <Message from="assistant">
-                            <MessageContent>
-                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <Loader>Preparing download...</Loader>
+                                <Loader>
+                                  {isExporting
+                                    ? "Preparing download..."
+                                    : "Thinking..."}
+                                </Loader>
                               </div>
                             </MessageContent>
                           </Message>
