@@ -210,3 +210,6 @@ body{
   scrollbar-color: rgba(100, 100, 100, 0.3) transparent;
 }
 
+html, body {
+  overflow-y: hidden;
+}

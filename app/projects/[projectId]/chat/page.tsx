@@ -596,23 +596,6 @@ function ChatPage() {
   // Load messages when sessionId changes from URL navigation (not from our own URL update)
   useEffect(() => {
     const loadSession = async () => {
-      // Don't load if:
-      // 1. No sessionId
-      // 2. We just updated the URL ourselves (new session being created)
-      // 3. We already loaded this session
-      // 4. We already have messages (ongoing conversation)
-      if (
-        !sessionId || 
-        isUpdatingUrlRef.current || 
-        sessionId === loadedSessionRef.current ||
-        messages.length > 0
-      ) {
-        if (isUpdatingUrlRef.current && sessionId) {
-          loadedSessionRef.current = sessionId;
-        }
-        return;
-      }
-
       setIsLoadingSession(true);
       try {
         const response = await axios.get(
@@ -658,7 +641,7 @@ function ChatPage() {
         } as React.CSSProperties
       }
     >
-      <div className="flex flex-col min-h-screen flex-1 min-w-0 bg-transparent backdrop-blur-md dark:bg-zinc-900/30">
+      <div className=" relative flex flex-col min-h-screen size-full overflow-hidden bg-transparent backdrop-blur-md dark:bg-zinc-900/30">
         {/* Top Header */}
         <div className="border-b border-border p-3 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -689,7 +672,7 @@ function ChatPage() {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+
           {messages.length === 0 ? (
             /* Empty State */
             <div className="flex-1 flex flex-col items-center justify-center px-4">
@@ -750,10 +733,9 @@ function ChatPage() {
           ) : (
             /* Chat Messages */
             <>
-              <div className="flex-1 overflow-y-auto">
-                <div className="max-w-5xl mx-auto">
+                
                   <Conversation>
-                    <ConversationContent className="px-4 sm:px-6 lg:px-8 py-6">
+                    <ConversationContent className=" max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
                       <div className="space-y-4">
                         {messages.map((message, messageIndex) => {
                           const isLastMessage =
@@ -909,8 +891,7 @@ function ChatPage() {
                     </ConversationContent>
                     <ConversationScrollButton />
                   </Conversation>
-                </div>
-              </div>
+                
 
               {/* Sticky Input */}
               <div className="shrink-0">
@@ -932,7 +913,6 @@ function ChatPage() {
               </div>
             </>
           )}
-        </div>
       </div>
       <ChatSessionSidebar />
     </SidebarProvider>
