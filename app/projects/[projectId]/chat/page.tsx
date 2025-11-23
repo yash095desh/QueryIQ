@@ -593,9 +593,28 @@ function ChatPage() {
     }
   };
 
+
   // Load messages when sessionId changes from URL navigation (not from our own URL update)
   useEffect(() => {
     const loadSession = async () => {
+      // Don't load if:
+      // 1. No sessionId
+      // 2. We just updated the URL ourselves (new session being created)
+      // 3. We already loaded this session
+      // 4. We already have messages (ongoing conversation)
+      if (
+        !sessionId || 
+        isUpdatingUrlRef.current || 
+        sessionId === loadedSessionRef.current ||
+        messages.length > 0
+      ) {
+        // If URL was just updated, mark it as loaded without fetching
+        if (isUpdatingUrlRef.current && sessionId) {
+          loadedSessionRef.current = sessionId;
+        }
+        return;
+      }
+
       setIsLoadingSession(true);
       try {
         const response = await axios.get(
@@ -603,7 +622,6 @@ function ChatPage() {
         );
         
         if (response.status === 200) {
-          console?.log("session messages:",response?.data?.messages)
           setMessages(response.data.messages || []);
           setSessionTitle(response.data.title || "Chat Session");
           loadedSessionRef.current = sessionId;
@@ -629,6 +647,7 @@ function ChatPage() {
       }
     }
   }, [sessionId, messages.length, setMessages]);
+
 
   return (
     <SidebarProvider
@@ -673,7 +692,7 @@ function ChatPage() {
 
         {/* Main Content */}
 
-          {messages.length === 0 ? (
+          {messages.length === 0 && !(status === "streaming" || isExporting) ? (
             /* Empty State */
             <div className="flex-1 flex flex-col items-center justify-center px-4">
               <div className="w-full max-w-3xl space-y-8">

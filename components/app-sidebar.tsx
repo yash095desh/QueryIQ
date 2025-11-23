@@ -6,6 +6,7 @@ import {
   FolderKanban,
   ImageIcon,
   Settings,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -55,12 +56,21 @@ export function AppSidebar() {
       <SidebarContent className="py-4">
         <SidebarGroup>
           {/* Brand / Title */}
-          <SidebarGroupLabel className="
+          <SidebarGroupLabel
+            className="
             font-audiowide text-xl tracking-wide px-3 
-            bg-gradient-to-r from-white via-gray-200 to-gray-300 
+            bg-linear-to-r from-white via-gray-200 to-gray-300 
             bg-clip-text text-transparent select-none
-          ">
-            QueryIQ
+          "
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-linear-to-br from-chart-1 to-chart-2 flex items-center justify-center">
+                <Zap size={20} className="text-black" />
+              </div>
+              <span className="text-2xl font-bold font-display gradient-green-text">
+                QueryIQ
+              </span>
+            </div>
           </SidebarGroupLabel>
 
           {/* Menu */}
@@ -102,7 +112,10 @@ export function AppSidebar() {
           className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
         >
           <Avatar className="h-8 w-8 rounded-lg">
-            <AvatarImage src={user?.imageUrl} alt={user?.firstName || "avatar"} />
+            <AvatarImage
+              src={user?.imageUrl}
+              alt={user?.firstName || "avatar"}
+            />
             <AvatarFallback className="rounded-lg">CN</AvatarFallback>
           </Avatar>
           <div className="grid flex-1 text-left text-sm leading-tight">

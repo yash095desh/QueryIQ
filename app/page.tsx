@@ -1,11 +1,32 @@
-import React from 'react'
+'use client'
 
-function LandingPage() {
+import { useState } from 'react'
+import Header from '@/components/header'
+import Hero from '@/components/hero'
+import HeroFeatures from '@/components/hero-features'
+import Features from '@/components/features'
+import HowItWorks from '@/components/how-it-works'
+import UseCases from '@/components/use-cases'
+import Pricing from '@/components/pricing'
+import Testimonials from '@/components/testimonials'
+import FAQ from '@/components/faq'
+import FinalCTA from '@/components/final-cta'
+import Footer from '@/components/footer'
+
+export default function Home() {
   return (
-    <div>
-      <h1 className='text-lg sm:text-xl md:text-2xl font-audiowide text-green-700'>Landing Page</h1>
+    <div className="min-h-screen">
+      <Header />
+      <Hero />
+      <HeroFeatures />
+      <Features />
+      <HowItWorks />
+      <UseCases />
+      <Pricing />
+      <Testimonials />
+      <FAQ />
+      <FinalCTA />
+      <Footer />
     </div>
   )
 }
-
-export default LandingPage
