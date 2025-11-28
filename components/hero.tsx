@@ -12,12 +12,19 @@ import {
 } from "lucide-react";
 import { motion, useScroll, useTransform, useInView } from "motion/react";
 import { useRef } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
+
 
 export default function Hero() {
+  const router = useRouter();
   const containerRef = useRef(null);
   const videoRef = useRef(null);
   const statsRef = useRef(null);
   const socialRef = useRef(null);
+
+  const { isSignedIn } = useAuth();
+
 
   const isInView = useInView(containerRef, { once: true, amount: 0.2 });
   const videoInView = useInView(videoRef, { once: true, amount: 0.3 });
@@ -31,6 +38,23 @@ export default function Hero() {
 
   const y = useTransform(scrollYProgress, [0, 1], [0, 100]);
   const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
+
+
+  const handleStartTrial = () => {
+    if (isSignedIn) {
+      router.push("/projects"); 
+    } else {
+      router.push("/sign-up"); 
+    }
+  };
+
+
+  const handleWatchDemo = () => {
+    const videoSection = document.getElementById("video-section");
+    if (videoSection) {
+      videoSection.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
 
   return (
     <section
@@ -131,7 +155,7 @@ export default function Hero() {
           ))}
         </motion.div>
 
-        {/* CTA Buttons */}
+        {/* CTA Buttons - Updated with onClick handlers */}
         <motion.div
           className="flex flex-col sm:flex-row gap-4 justify-center mb-12"
           initial={{ opacity: 0, y: 20 }}
@@ -139,14 +163,18 @@ export default function Hero() {
           transition={{ duration: 0.6, delay: 0.3 }}
         >
           <motion.button
+            onClick={handleStartTrial}
             className="gradient-green-button px-8 py-4 rounded-lg font-bold text-base glow-green relative overflow-hidden group"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.98 }}
           >
-            <span className="relative z-10">Start Free Trial</span>
+            <span className="relative z-10">
+              {isSignedIn ? "Go to Products" : "Start Free Trial"}
+            </span>
           </motion.button>
 
           <motion.button
+            onClick={handleWatchDemo}
             className="flex items-center justify-center gap-2 border border-chart-5 px-8 py-4 rounded-lg font-semibold text-primary hover:bg-lime-400/10 transition-all hover:border-primary group relative"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.98 }}
@@ -159,8 +187,9 @@ export default function Hero() {
           </motion.button>
         </motion.div>
 
-        {/* Video Demo Container - Fades in on scroll */}
+        {/* Video Demo Container - Added id for scrolling */}
         <motion.div
+          id="video-section"
           ref={videoRef}
           className="relative mb-12 "
           initial={{ opacity: 0, y: 40 }}
@@ -200,7 +229,7 @@ export default function Hero() {
           </div>
         </motion.div>
 
-        {/* Stats with counter animation - Fades in on scroll */}
+        {/* Stats with counter animation */}
         <motion.div
           ref={statsRef}
           className="grid grid-cols-3 gap-4 mb-16"
@@ -238,7 +267,7 @@ export default function Hero() {
           ))}
         </motion.div>
 
-        {/* Social Proof - Fades in on scroll */}
+        {/* Social Proof */}
         <motion.div
           ref={socialRef}
           className="mt-24 pt-16 border-t border-white/5"
@@ -255,7 +284,7 @@ export default function Hero() {
             Trusted by industry leaders
           </motion.p>
           
-          {/* Logo Grid with stagger animation */}
+          {/* Logo Grid */}
           <motion.div
             className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-x-16 gap-y-10 items-center max-w-6xl mx-auto"
             initial={{ opacity: 0 }}
@@ -277,13 +306,11 @@ export default function Hero() {
                     ease: "easeOut" 
                   }}
                 >
-                  {/* Subtle glow on hover */}
                   <motion.div
                     className="absolute inset-0 bg-primary/10 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"
                     initial={false}
                   />
                   
-                  {/* Company logo text */}
                   <motion.span
                     className="relative text-gray-500 font-bold text-xl tracking-tight group-hover:text-gray-300 transition-colors duration-300 cursor-pointer"
                     whileHover={{ scale: 1.05 }}
