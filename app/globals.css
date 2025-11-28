@@ -296,3 +296,20 @@ body {
     @apply bg-linear-to-r from-chart-4 to-primary text-black hover:from-primary hover:to-chart-1 shadow-lg shadow-ring hover:shadow-ring transition-all duration-300;
   }
 }
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #777;
+}

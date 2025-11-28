@@ -126,8 +126,7 @@ Maximum ${PAGINATION_CONFIG.maxRowsPerPage} rows per query. Use cursor-based pag
                 : results,
             rowCount: results.length,
             estimatedTokens,
-            truncated:
-              estimatedTokens > PAGINATION_CONFIG.maxTokensForResults,
+            truncated: estimatedTokens > PAGINATION_CONFIG.maxTokensForResults,
             warning:
               estimatedTokens > PAGINATION_CONFIG.maxTokensForResults
                 ? "Results truncated due to size. Consider using aggregations or exporting to Excel."
@@ -143,9 +142,7 @@ Maximum ${PAGINATION_CONFIG.maxRowsPerPage} rows per query. Use cursor-based pag
         } catch (error) {
           return {
             error:
-              error instanceof Error
-                ? error.message
-                : "Query execution failed",
+              error instanceof Error ? error.message : "Query execution failed",
             results: null,
           };
         }
@@ -230,7 +227,6 @@ Maximum ${PAGINATION_CONFIG.maxRowsPerPage} rows per query. Use cursor-based pag
           .describe("Alternative approaches (e.g., export, aggregation)"),
       }),
     },
-
     // Generate Excel export (client-side tool)
     generateExcel: {
       description: `Generate Excel file from query results. Use this when:

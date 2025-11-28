@@ -107,26 +107,37 @@ export async function saveMessages(
   sessionId: string, 
   messages: UIMessage[]
 ): Promise<void> {
-  // Convert UIMessage to database format
-  const dbRecords = messages.map(msg => 
+  const existingMessages = await prisma.message.findMany({
+    where: { chatSessionId: sessionId },
+    select: { id: true }
+  });
+
+  const existingIds = new Set(existingMessages.map(m => m.id));
+
+  const newMessages = messages.filter(msg => !existingIds.has(msg.id));
+
+  if (newMessages.length === 0) {
+    console.log("✅ No new messages to save");
+    return;
+  }
+
+  const dbRecords = newMessages.map(msg => 
     convertUIMessageToDb(msg, sessionId)
   );
 
-  // Upsert messages (insert new or update existing)
-  await prisma.$transaction(
-    dbRecords.map(record =>
-      prisma.message.upsert({
-        where: { id: record.id },
-        create: record,
-        update: {
-          content: record.content,
-          parts: record.parts,
-          metadata: record.metadata
-        }
-      })
-    )
-  );
+  await prisma.message.createMany({
+    data: dbRecords,
+    skipDuplicates: true 
+  });
+
+  await prisma.chatSession.update({
+    where: { id: sessionId },
+    data: { updatedAt: new Date() }
+  });
+
+  console.log(`💾 Saved ${newMessages.length} new messages to session ${sessionId}`);
 }
+
 
 /**
  * Convert database message to UIMessage format
