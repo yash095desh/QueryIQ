@@ -96,7 +96,7 @@ export async function loadMessages(sessionId: string): Promise<UIMessage[]> {
     orderBy: { createdAt: 'asc' }
   });
 
-  return dbMessages.map(msg => convertDbMessageToUI(msg));
+  return dbMessages.map((msg:any) => convertDbMessageToUI(msg));
 }
 
 /**
@@ -112,7 +112,7 @@ export async function saveMessages(
     select: { id: true }
   });
 
-  const existingIds = new Set(existingMessages.map(m => m.id));
+  const existingIds = new Set(existingMessages.map((m:any) => m.id));
 
   const newMessages = messages.filter(msg => !existingIds.has(msg.id));
 
