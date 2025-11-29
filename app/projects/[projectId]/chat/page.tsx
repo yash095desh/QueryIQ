@@ -79,6 +79,7 @@ import axios from "axios";
 import { ChatSessionSidebar } from "@/components/ChatSessionSidebar";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { useUser } from "@clerk/nextjs";
+import { SidebarOverlay } from "@/components/useSidebarClickOutside";
 
 function ChatPage() {
   const params = useParams();
@@ -87,7 +88,6 @@ function ChatPage() {
   const { user } = useUser();
 
   const projectId = params.projectId as string;
-  const sessionId = searchParams.get("session");
 
   // State
   const [isExporting, setIsExporting] = useState(false);
@@ -96,17 +96,23 @@ function ChatPage() {
   const [sessionTitle, setSessionTitle] = useState<string>("");
   const [isLoadingSession, setIsLoadingSession] = useState(false);
 
-
   // Refs
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isUpdatingUrlRef = useRef(false);
   const loadedSessionRef = useRef<string | null>(null);
-  const isInitialMount = useRef(true);
-
+  // ✅ Use ref to track sessionId
+  const sessionIdRef = useRef<string | null>(null);
 
   // Generate a stable chat ID that doesn't change during the session
   const [chatId] = useState(() => `new-chat-${Date.now()}`);
 
+  // Initialize sessionId from URL on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      sessionIdRef.current = params.get("session");
+    }
+  }, []);
 
   // Chat hook setup
   const {
@@ -121,15 +127,14 @@ function ChatPage() {
     transport: new DefaultChatTransport({
       api: `/api/chat/${projectId}`,
       prepareSendMessagesRequest({ messages, id }) {
-
         if (process.env.NODE_ENV === "development") {
-          console.log("Sending message with sessionId:", sessionId);
+          console.log("Sending message with sessionId:", sessionIdRef.current);
         }
 
         return {
           body: {
             messages: [messages[messages.length - 1]],
-            sessionId: sessionId || undefined,
+            sessionId: sessionIdRef.current || undefined,
           },
         };
       },
@@ -142,25 +147,30 @@ function ChatPage() {
 
       if (process.env.NODE_ENV === "development") {
         console.log("Message finished. Session ID:", newSessionId);
+        console.log("Current sessionId in ref:", sessionIdRef.current);
       }
 
       // Only update URL if we received a NEW session (first message in new chat)
-      if (newSessionId  && !sessionId) {
+      if (newSessionId && !sessionIdRef.current) {
         if (process.env.NODE_ENV === "development") {
           console.log("New session created:", newSessionId);
         }
 
+        // Mark as our own update AND set the loaded ref BEFORE updating
         isUpdatingUrlRef.current = true;
         loadedSessionRef.current = newSessionId;
+        sessionIdRef.current = newSessionId;
 
+        // Update URL
         const url = new URL(window.location.href);
         url.searchParams.set("session", newSessionId);
         router.replace(url.pathname + url.search, { scroll: false });
 
+        // Clear the flag after state updates have processed
         setTimeout(() => {
           isUpdatingUrlRef.current = false;
         }, 100);
-      } else if (newSessionId && sessionId === newSessionId) {
+      } else if (newSessionId && sessionIdRef.current === newSessionId) {
         if (process.env.NODE_ENV === "development") {
           console.log("Continuing existing session:", newSessionId);
         }
@@ -181,149 +191,63 @@ function ChatPage() {
     },
   });
 
-  // Excel export handler
-  const handleExcelExport = useCallback(
-    async (toolCall: any) => {
-      setIsExporting(true);
-      try {
-        const { query, filename, sheetName } = toolCall.input;
-
-        const response = await fetch("/api/chat/execute-export", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, query }),
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch data for export");
-        }
-
-        const { data } = await response.json();
-
-        const worksheet = XLSX.utils.json_to_sheet(data);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName || "Data");
-
-        XLSX.writeFile(workbook, `${filename}.xlsx`);
-
-        addToolOutput({
-          tool: "generateExcel",
-          toolCallId: toolCall.toolCallId,
-          output: {
-            success: true,
-            rowsExported: data.length,
-            message: `Successfully exported ${data.length} rows to ${filename}.xlsx`,
-          },
-        });
-      } catch (error) {
-        console.error("Excel generation error:", error);
-        addToolOutput({
-          tool: "generateExcel",
-          toolCallId: toolCall.toolCallId,
-          output: {
-            success: false,
-            error: error instanceof Error ? error.message : "Export failed",
-          },
-        });
-      } finally {
-        setIsExporting(false);
-      }
-    },
-    [projectId, addToolOutput]
-  );
-
-  // Copy handler
-  const handleCopy = useCallback((content: string) => {
-    navigator.clipboard.writeText(content);
-  }, []);
-
-  // Submit handler
-  const handleSubmit = useCallback(
-    (message: PromptInputMessage) => {
-      const hasText = Boolean(message.text);
-      const hasAttachments = Boolean(message.files?.length);
-
-      if (!(hasText || hasAttachments)) {
-        return;
-      }
-
-      if (message.text) {
-        sendMessage({ text: message.text });
-      }
-    },
-    [sendMessage]
-  );
-
-  // Sync currentSessionId with URL sessionId changes
+  // Sync URL sessionId changes to ref
   useEffect(() => {
-    console.log("Session changed:", sessionId);
-  }, [sessionId]);
+    const urlSessionId = searchParams.get("session");
 
-  // Load messages when sessionId changes from URL navigation
-  useEffect(() => {
-    const loadSession = async () => {
-      if (
-        !sessionId ||
-        isUpdatingUrlRef.current ||
-        sessionId === loadedSessionRef.current ||
-        messages.length > 0
-      ) {
-        if (isUpdatingUrlRef.current && sessionId) {
-          loadedSessionRef.current = sessionId;
-        }
-        return;
-      }
+    if (urlSessionId !== sessionIdRef.current) {
+      console.log("SessionId changed from URL:", urlSessionId);
+      sessionIdRef.current = urlSessionId;
 
-      setIsLoadingSession(true);
-      try {
-        const response = await axios.get(
-          `/api/chat/${projectId}?session=${sessionId}`
-        );
-
-        if (response.status === 200) {
-          setMessages(response.data.messages || []);
-          setSessionTitle(response.data.title || "Chat Session");
-          loadedSessionRef.current = sessionId;
-        }
-      } catch (error) {
-        console.error("Error loading session:", error);
-      } finally {
-        setIsLoadingSession(false);
-      }
-    };
-
-    loadSession();
-  }, [sessionId, projectId]);
-
-  // Clear session when there's no sessionId (new chat)
-  useEffect(() => {
-    if (!sessionId && loadedSessionRef.current) {
-      setSessionTitle("");
-      loadedSessionRef.current = null;
-
-      if (messages.length > 0) {
-        setMessages([]);
-      }
+      // Trigger session load
+      loadSession(urlSessionId);
     }
-  }, [sessionId, messages.length, setMessages]);
+  }, [searchParams]);
 
-  // Reset state when starting a completely new chat
-  useEffect(() => {
-    if (!sessionId ) {
-      if (process.env.NODE_ENV === "development") {
-        console.log("Clearing session state for new chat");
-      }
-      setSessionTitle("");
-      loadedSessionRef.current = null;
-
-      if (messages.length > 0) {
+  // Load session function
+  const loadSession = async (sessionId: string | null) => {
+    // New chat - clear state
+    if (!sessionId) {
+      if (loadedSessionRef.current !== null) {
         setMessages([]);
+        setSessionTitle("");
+        loadedSessionRef.current = null;
       }
+      return;
     }
-  }, [sessionId]);
 
+    // It's our own update - just mark as loaded
+    if (isUpdatingUrlRef.current) {
+      loadedSessionRef.current = sessionId;
+      return;
+    }
 
-    // Tool renderer with useCallback to prevent recreation
+    // Already loaded this session
+    if (sessionId === loadedSessionRef.current) {
+      return;
+    }
+
+    // Different session - load it
+    setIsLoadingSession(true);
+    try {
+      const response = await axios.get(
+        `/api/chat/${projectId}?session=${sessionId}`
+      );
+
+      if (response.status === 200) {
+        setMessages(response.data.messages || []);
+        setSessionTitle(response.data.title || "Chat Session");
+        loadedSessionRef.current = sessionId;
+      }
+    } catch (error) {
+      console.error("Error loading session:", error);
+      setMessages([]);
+      loadedSessionRef.current = null;
+    } finally {
+      setIsLoadingSession(false);
+    }
+  };
+
   const renderToolPart = useCallback(
     (part: any, callId: string) => {
       const toolRenderers: Record<string, any> = {
@@ -720,6 +644,79 @@ function ChatPage() {
     [addToolOutput]
   );
 
+  // Excel export handler
+  const handleExcelExport = useCallback(
+    async (toolCall: any) => {
+      setIsExporting(true);
+      try {
+        const { query, filename, sheetName } = toolCall.input;
+
+        const response = await fetch("/api/chat/execute-export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, query }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch data for export");
+        }
+
+        const { data } = await response.json();
+
+        const worksheet = XLSX.utils.json_to_sheet(data);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName || "Data");
+
+        XLSX.writeFile(workbook, `${filename}.xlsx`);
+
+        addToolOutput({
+          tool: "generateExcel",
+          toolCallId: toolCall.toolCallId,
+          output: {
+            success: true,
+            rowsExported: data.length,
+            message: `Successfully exported ${data.length} rows to ${filename}.xlsx`,
+          },
+        });
+      } catch (error) {
+        console.error("Excel generation error:", error);
+        addToolOutput({
+          tool: "generateExcel",
+          toolCallId: toolCall.toolCallId,
+          output: {
+            success: false,
+            error: error instanceof Error ? error.message : "Export failed",
+          },
+        });
+      } finally {
+        setIsExporting(false);
+      }
+    },
+    [projectId, addToolOutput]
+  );
+
+  // Copy handler
+  const handleCopy = useCallback((content: string) => {
+    navigator.clipboard.writeText(content);
+  }, []);
+
+  // Submit handler
+  const handleSubmit = useCallback(
+    (message: PromptInputMessage) => {
+      const hasText = Boolean(message.text);
+      const hasAttachments = Boolean(message.files?.length);
+
+      if (!(hasText || hasAttachments)) {
+        return;
+      }
+
+      if (message.text) {
+        sendMessage({ text: message.text });
+      }
+    },
+    [sendMessage]
+  );
+
   return (
     <SidebarProvider
       defaultOpen={false}
@@ -731,11 +728,12 @@ function ChatPage() {
         } as React.CSSProperties
       }
     >
+      <SidebarOverlay />
       <div className=" relative flex flex-col min-h-screen size-full overflow-hidden bg-transparent backdrop-blur-md dark:bg-zinc-900/30">
         {/* Top Header */}
         <div className="border-b border-border p-3 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            {sessionId ? (
+            {sessionIdRef.current ? (
               <>
                 <MessageSquare className="h-5 w-5 text-muted-foreground" />
                 <div>
@@ -745,7 +743,7 @@ function ChatPage() {
                     </h1>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    Session: {sessionId.slice(0, 8)}...
+                    Session: {sessionIdRef.current.slice(0, 8)}...
                   </p>
                 </div>
               </>
