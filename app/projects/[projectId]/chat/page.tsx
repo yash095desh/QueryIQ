@@ -248,402 +248,660 @@ function ChatPage() {
     }
   };
 
-  const renderToolPart = useCallback(
-    (part: any, callId: string) => {
-      const toolRenderers: Record<string, any> = {
-        "tool-getRowCount": () => (
-          <Tool defaultOpen={part.state === "output-available"}>
-            <ToolHeader state={part.state} title="Row Count" type={part.type} />
-            <ToolContent>
-              {part.state === "output-available" && (
-                <ToolOutput
-                  errorText={part.errorText}
-                  output={
-                    <Card className="border-primary/20 bg-primary/5">
-                      <div className="p-4 space-y-3">
-                        <div className="flex items-center gap-2">
-                          <BarChart3 className="h-4 w-4 text-primary" />
-                          <span className="font-semibold text-sm">
-                            Row Count
-                          </span>
-                        </div>
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-3xl font-bold text-primary">
-                            {part.output.count?.toLocaleString()}
-                          </span>
-                          <span className="text-sm text-muted-foreground">
-                            rows
-                          </span>
-                        </div>
-                        {part.output.recommendation && (
-                          <p className="text-sm text-muted-foreground">
-                            {part.output.recommendation}
-                          </p>
-                        )}
-                      </div>
-                    </Card>
-                  }
-                />
-              )}
-              {part.state === "output-error" && (
-                <ToolOutput errorText={part.errorText} output={undefined} />
-              )}
-            </ToolContent>
-          </Tool>
-        ),
-
-        "tool-executeQuery": () => (
-          <Tool defaultOpen={part.state === "output-available"}>
-            <ToolHeader
-              state={part.state}
-              title="Execute Query"
-              type={part.type}
-            />
-            <ToolContent>
-              {(part.state === "input-streaming" ||
-                part.state === "input-available") && (
-                <ToolInput
-                  input={
-                    part.input?.explanation
-                      ? { explanation: part.input.explanation }
-                      : {}
-                  }
-                />
-              )}
-              {part.state === "output-available" && (
-                <ToolOutput
-                  errorText={part.errorText}
-                  output={
-                    <div className="space-y-3 w-full overflow-hidden">
-                      {part.output.truncated && (
-                        <Alert className="border-orange-500/50 bg-orange-500/5">
-                          <AlertTriangle className="h-4 w-4 text-orange-600" />
-                          <AlertDescription className="text-orange-900 dark:text-orange-100">
-                            {part.output.warning}
-                          </AlertDescription>
-                        </Alert>
-                      )}
+const renderToolPart = useCallback(
+  (part: any, callId: string) => {
+    const toolRenderers: Record<string, any> = {
+      // SQL TOOLS (PostgreSQL/MySQL)
+      "tool-getRowCount": () => (
+        <Tool defaultOpen={part.state === "output-available"}>
+          <ToolHeader state={part.state} title="Row Count" type={part.type} />
+          <ToolContent>
+            {part.state === "output-available" && (
+              <ToolOutput
+                errorText={part.errorText}
+                output={
+                  <Card className="border-primary/20 bg-primary/5">
+                    <div className="p-4 space-y-3">
                       <div className="flex items-center gap-2">
-                        <Table2 className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm font-semibold">
-                          Query Results
+                        <BarChart3 className="h-4 w-4 text-primary" />
+                        <span className="font-semibold text-sm">
+                          Row Count
                         </span>
-                        <Badge variant="secondary" className="ml-auto">
-                          {part.output.rowCount} rows
-                        </Badge>
                       </div>
-                      {part.output.results &&
-                        part.output.results.length > 0 && (
-                          <div className="rounded-lg border overflow-hidden w-full">
-                            <div className="overflow-x-auto max-w-full">
-                              <Table>
-                                <TableHeader>
-                                  <TableRow className="bg-muted/50 hover:bg-muted/50">
-                                    {Object.keys(part.output.results[0]).map(
-                                      (key) => (
-                                        <TableHead
-                                          key={key}
-                                          className="font-semibold whitespace-nowrap"
-                                        >
-                                          {key}
-                                        </TableHead>
-                                      )
-                                    )}
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {part.output.results
-                                    .slice(0, 10)
-                                    .map((row: any, idx: number) => (
-                                      <TableRow key={idx}>
-                                        {Object.values(row).map(
-                                          (value: any, cellIdx: number) => (
-                                            <TableCell
-                                              key={cellIdx}
-                                              className="font-mono text-xs max-w-[200px] truncate"
-                                            >
-                                              {value === null ? (
-                                                <span className="text-muted-foreground italic">
-                                                  null
-                                                </span>
-                                              ) : (
-                                                String(value)
-                                              )}
-                                            </TableCell>
-                                          )
-                                        )}
-                                      </TableRow>
-                                    ))}
-                                </TableBody>
-                              </Table>
-                            </div>
-                            {part.output.results.length > 10 && (
-                              <div className="px-4 py-2 text-xs text-muted-foreground bg-muted/30 border-t text-center">
-                                Showing first 10 of {part.output.results.length}{" "}
-                                rows
-                              </div>
-                            )}
-                          </div>
-                        )}
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-bold text-primary">
+                          {part.output.count?.toLocaleString()}
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          rows
+                        </span>
+                      </div>
+                      {part.output.recommendation && (
+                        <p className="text-sm text-muted-foreground">
+                          {part.output.recommendation}
+                        </p>
+                      )}
                     </div>
-                  }
-                />
-              )}
-              {part.state === "output-error" && (
-                <ToolOutput errorText={part.errorText} output={undefined} />
-              )}
-            </ToolContent>
-          </Tool>
-        ),
+                  </Card>
+                }
+              />
+            )}
+            {part.state === "output-error" && (
+              <ToolOutput errorText={part.errorText} output={undefined} />
+            )}
+          </ToolContent>
+        </Tool>
+      ),
 
-        "tool-executeAggregation": () => (
-          <Tool defaultOpen={part.state === "output-available"}>
-            <ToolHeader
-              state={part.state}
-              title="Execute Aggregation"
-              type={part.type}
-            />
-            <ToolContent>
-              {part.state === "output-available" && (
-                <ToolOutput
-                  errorText={part.errorText}
-                  output={
-                    <Card>
-                      <div className="p-4 space-y-3">
-                        <div className="flex items-center gap-2">
-                          <BarChart3 className="h-4 w-4 text-primary" />
-                          <span className="font-semibold text-sm">
-                            Summary Statistics
-                          </span>
-                        </div>
-                        <CodeBlock
-                          language="json"
-                          code={JSON.stringify(part.output.results, null, 2)}
-                        />
+      // MONGODB TOOLS
+      "tool-getDocumentCount": () => (
+        <Tool defaultOpen={part.state === "output-available"}>
+          <ToolHeader
+            state={part.state}
+            title="Document Count"
+            type={part.type}
+          />
+          <ToolContent>
+            {part.state === "output-available" && (
+              <ToolOutput
+                errorText={part.errorText}
+                output={
+                  <Card className="border-primary/20 bg-primary/5">
+                    <div className="p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Database className="h-4 w-4 text-primary" />
+                        <span className="font-semibold text-sm">
+                          Document Count
+                        </span>
+                        {part.output.explanation && (
+                          <Badge variant="outline" className="ml-auto">
+                            MongoDB
+                          </Badge>
+                        )}
                       </div>
-                    </Card>
-                  }
-                />
-              )}
-              {part.state === "output-error" && (
-                <ToolOutput errorText={part.errorText} output={undefined} />
-              )}
-            </ToolContent>
-          </Tool>
-        ),
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-bold text-primary">
+                          {part.output.count?.toLocaleString()}
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          documents
+                        </span>
+                      </div>
+                      {part.output.recommendation && (
+                        <p className="text-sm text-muted-foreground">
+                          {part.output.recommendation}
+                        </p>
+                      )}
+                      {part.output.explanation && (
+                        <p className="text-xs text-muted-foreground italic">
+                          {part.output.explanation}
+                        </p>
+                      )}
+                    </div>
+                  </Card>
+                }
+              />
+            )}
+            {part.state === "output-error" && (
+              <ToolOutput errorText={part.errorText} output={undefined} />
+            )}
+          </ToolContent>
+        </Tool>
+      ),
 
-        "tool-getSchema": () => (
-          <Tool defaultOpen={part.state === "output-available"}>
-            <ToolHeader
-              state={part.state}
-              title="Database Schema"
-              type={part.type}
-            />
-            <ToolContent>
-              {part.state === "output-available" && (
-                <ToolOutput
-                  errorText={part.errorText}
-                  output={
-                    <Card>
-                      <div className="p-4 space-y-3">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Database className="h-4 w-4 text-primary" />
-                          <span className="font-semibold text-sm">
-                            Database Schema
-                          </span>
+      "tool-findDocuments": () => (
+        <Tool defaultOpen={part.state === "output-available"}>
+          <ToolHeader
+            state={part.state}
+            title="Find Documents"
+            type={part.type}
+          />
+          <ToolContent>
+            {(part.state === "input-streaming" ||
+              part.state === "input-available") && (
+              <ToolInput
+                input={
+                  part.input?.explanation
+                    ? { explanation: part.input.explanation }
+                    : {}
+                }
+              />
+            )}
+            {part.state === "output-available" && (
+              <ToolOutput
+                errorText={part.errorText}
+                output={
+                  <div className="space-y-3 w-full overflow-hidden">
+                    {part.output.truncated && (
+                      <Alert className="border-orange-500/50 bg-orange-500/5">
+                        <AlertTriangle className="h-4 w-4 text-orange-600" />
+                        <AlertDescription className="text-orange-900 dark:text-orange-100">
+                          {part.output.warning}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Database className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-semibold">
+                        MongoDB Documents
+                      </span>
+                      <Badge variant="secondary" className="ml-auto">
+                        {part.output.documentCount} documents
+                      </Badge>
+                    </div>
+                    {part.output.results &&
+                      part.output.results.length > 0 && (
+                        <div className="space-y-2">
+                          {part.output.results
+                            .slice(0, 10)
+                            .map((doc: any, idx: number) => (
+                              <details
+                                key={idx}
+                                className="group rounded-lg border bg-card"
+                              >
+                                <summary className="cursor-pointer px-4 py-3 text-sm font-medium hover:bg-muted/50 flex items-center gap-2">
+                                  <span className="group-open:rotate-90 transition-transform">
+                                    ▶
+                                  </span>
+                                  <span>Document {idx + 1}</span>
+                                  {doc._id && (
+                                    <code className="ml-auto text-xs text-muted-foreground">
+                                      {String(doc._id).slice(0, 8)}...
+                                    </code>
+                                  )}
+                                </summary>
+                                <div className="px-4 pb-3">
+                                  <CodeBlock
+                                    language="json"
+                                    code={JSON.stringify(doc, null, 2)}
+                                  />
+                                </div>
+                              </details>
+                            ))}
+                          {part.output.results.length > 10 && (
+                            <div className="px-4 py-2 text-xs text-muted-foreground bg-muted/30 border rounded-lg text-center">
+                              Showing first 10 of {part.output.results.length}{" "}
+                              documents
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    {part.output.pagination && (
+                      <div className="flex items-center justify-between text-xs text-muted-foreground pt-2">
+                        <span>
+                          Page {part.output.pagination.currentPage}
+                          {part.output.pagination.totalEstimated &&
+                            ` of ~${Math.ceil(
+                              part.output.pagination.totalEstimated / 50
+                            )}`}
+                        </span>
+                        {part.output.pagination.hasMore && (
+                          <Badge variant="outline" className="text-xs">
+                            More available
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                }
+              />
+            )}
+            {part.state === "output-error" && (
+              <ToolOutput errorText={part.errorText} output={undefined} />
+            )}
+          </ToolContent>
+        </Tool>
+      ),
+
+      // SQL QUERY EXECUTION (PostgreSQL/MySQL)
+      "tool-executeQuery": () => (
+        <Tool defaultOpen={part.state === "output-available"}>
+          <ToolHeader
+            state={part.state}
+            title="Execute Query"
+            type={part.type}
+          />
+          <ToolContent>
+            {(part.state === "input-streaming" ||
+              part.state === "input-available") && (
+              <ToolInput
+                input={
+                  part.input?.explanation
+                    ? { explanation: part.input.explanation }
+                    : {}
+                }
+              />
+            )}
+            {part.state === "output-available" && (
+              <ToolOutput
+                errorText={part.errorText}
+                output={
+                  <div className="space-y-3 w-full overflow-hidden">
+                    {part.output.truncated && (
+                      <Alert className="border-orange-500/50 bg-orange-500/5">
+                        <AlertTriangle className="h-4 w-4 text-orange-600" />
+                        <AlertDescription className="text-orange-900 dark:text-orange-100">
+                          {part.output.warning}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Table2 className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-semibold">
+                        Query Results
+                      </span>
+                      <Badge variant="secondary" className="ml-auto">
+                        {part.output.rowCount} rows
+                      </Badge>
+                    </div>
+                    {part.output.results &&
+                      part.output.results.length > 0 && (
+                        <div className="rounded-lg border overflow-hidden w-full">
+                          <div className="overflow-x-auto max-w-full">
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                                  {Object.keys(part.output.results[0]).map(
+                                    (key) => (
+                                      <TableHead
+                                        key={key}
+                                        className="font-semibold whitespace-nowrap"
+                                      >
+                                        {key}
+                                      </TableHead>
+                                    )
+                                  )}
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {part.output.results
+                                  .slice(0, 10)
+                                  .map((row: any, idx: number) => (
+                                    <TableRow key={idx}>
+                                      {Object.values(row).map(
+                                        (value: any, cellIdx: number) => (
+                                          <TableCell
+                                            key={cellIdx}
+                                            className="font-mono text-xs max-w-[200px] truncate"
+                                          >
+                                            {value === null ? (
+                                              <span className="text-muted-foreground italic">
+                                                null
+                                              </span>
+                                            ) : (
+                                              String(value)
+                                            )}
+                                          </TableCell>
+                                        )
+                                      )}
+                                    </TableRow>
+                                  ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                          {part.output.results.length > 10 && (
+                            <div className="px-4 py-2 text-xs text-muted-foreground bg-muted/30 border-t text-center">
+                              Showing first 10 of {part.output.results.length}{" "}
+                              rows
+                            </div>
+                          )}
+                        </div>
+                      )}
+                  </div>
+                }
+              />
+            )}
+            {part.state === "output-error" && (
+              <ToolOutput errorText={part.errorText} output={undefined} />
+            )}
+          </ToolContent>
+        </Tool>
+      ),
+
+      // AGGREGATION (Works for both SQL and MongoDB)
+      "tool-executeAggregation": () => (
+        <Tool defaultOpen={part.state === "output-available"}>
+          <ToolHeader
+            state={part.state}
+            title={
+              part.output?.type === "aggregation"
+                ? "Aggregation Results"
+                : "Execute Aggregation"
+            }
+            type={part.type}
+          />
+          <ToolContent>
+            {part.state === "output-available" && (
+              <ToolOutput
+                errorText={part.errorText}
+                output={
+                  <Card>
+                    <div className="p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <BarChart3 className="h-4 w-4 text-primary" />
+                        <span className="font-semibold text-sm">
+                          {part.output.explanation || "Summary Statistics"}
+                        </span>
+                        {part.output.documentCount !== undefined && (
+                          <Badge variant="outline" className="ml-auto">
+                            {part.output.documentCount} results
+                          </Badge>
+                        )}
+                        {part.output.rowCount !== undefined && (
+                          <Badge variant="outline" className="ml-auto">
+                            {part.output.rowCount} rows
+                          </Badge>
+                        )}
+                      </div>
+                      {part.output.results && (
+                        <div className="rounded-lg border overflow-hidden">
+                          <CodeBlock
+                            language="json"
+                            code={JSON.stringify(part.output.results, null, 2)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                }
+              />
+            )}
+            {part.state === "output-error" && (
+              <ToolOutput errorText={part.errorText} output={undefined} />
+            )}
+          </ToolContent>
+        </Tool>
+      ),
+
+      // SCHEMA (Works for all database types)
+      "tool-getSchema": () => (
+        <Tool defaultOpen={part.state === "output-available"}>
+          <ToolHeader
+            state={part.state}
+            title="Database Schema"
+            type={part.type}
+          />
+          <ToolContent>
+            {part.state === "output-available" && (
+              <ToolOutput
+                errorText={part.errorText}
+                output={
+                  <Card>
+                    <div className="p-4 space-y-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Database className="h-4 w-4 text-primary" />
+                        <span className="font-semibold text-sm">
+                          {part.output.dbType === "mongodb"
+                            ? "MongoDB Schema"
+                            : "Database Schema"}
+                        </span>
+                        {part.output.tableCount !== undefined && (
                           <Badge variant="secondary">
                             {part.output.tableCount} tables
                           </Badge>
-                        </div>
-                        <details className="group">
-                          <summary className="cursor-pointer text-sm text-primary hover:underline list-none flex items-center gap-1">
-                            <span className="group-open:rotate-90 transition-transform inline-block">
-                              ▶
-                            </span>
-                            View schema details
-                          </summary>
-                          <div className="mt-3">
-                            <CodeBlock
-                              language="json"
-                              code={JSON.stringify(part.output, null, 2)}
-                            />
-                          </div>
-                        </details>
+                        )}
+                        {part.output.collectionCount !== undefined && (
+                          <Badge variant="secondary">
+                            {part.output.collectionCount} collections
+                          </Badge>
+                        )}
+                        {part.output.dbType && (
+                          <Badge variant="outline" className="ml-auto">
+                            {part.output.dbType.toUpperCase()}
+                          </Badge>
+                        )}
                       </div>
-                    </Card>
+
+                      {/* MongoDB-specific display */}
+                      {part.output.dbType === "mongodb" &&
+                        part.output.collections && (
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium">Collections:</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              {part.output.collections.map(
+                                (collection: string) => (
+                                  <div
+                                    key={collection}
+                                    className="flex items-center justify-between p-2 rounded-md border bg-muted/30"
+                                  >
+                                    <span className="text-xs font-mono">
+                                      {collection}
+                                    </span>
+                                    {part.output.documentCounts?.[
+                                      collection
+                                    ] !== undefined && (
+                                      <Badge
+                                        variant="secondary"
+                                        className="text-xs"
+                                      >
+                                        {part.output.documentCounts[
+                                          collection
+                                        ].toLocaleString()}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                      {/* SQL-specific display */}
+                      {part.output.dbType !== "mongodb" &&
+                        part.output.tables && (
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium">Tables:</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              {part.output.tables.map((table: string) => (
+                                <div
+                                  key={table}
+                                  className="flex items-center p-2 rounded-md border bg-muted/30"
+                                >
+                                  <Table2 className="h-3 w-3 mr-2 text-muted-foreground" />
+                                  <span className="text-xs font-mono">
+                                    {table}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                      {/* Expandable full schema */}
+                      <details className="group">
+                        <summary className="cursor-pointer text-sm text-primary hover:underline list-none flex items-center gap-1">
+                          <span className="group-open:rotate-90 transition-transform inline-block">
+                            ▶
+                          </span>
+                          View full schema details
+                        </summary>
+                        <div className="mt-3">
+                          <CodeBlock
+                            language="json"
+                            code={JSON.stringify(part.output, null, 2)}
+                          />
+                        </div>
+                      </details>
+                    </div>
+                  </Card>
+                }
+              />
+            )}
+            {part.state === "output-error" && (
+              <ToolOutput errorText={part.errorText} output={undefined} />
+            )}
+          </ToolContent>
+        </Tool>
+      ),
+
+      // CONFIRMATION (Works for all database types)
+      "tool-askForConfirmation": () => {
+        const callId = part.toolCallId;
+
+        if (part.state === "input-available") {
+          return (
+            <Tool defaultOpen>
+              <ToolHeader
+                state={part.state}
+                title="Confirmation Required"
+                type={part.type}
+              />
+              <ToolContent>
+                <div className="space-y-4">
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      {part.input?.message || "Do you want to proceed?"}
+                    </AlertDescription>
+                  </Alert>
+
+                  {part.input?.queryPreview && (
+                    <div>
+                      <p className="text-sm font-medium mb-2">
+                        Query to execute:
+                      </p>
+                      <CodeBlock
+                        language={
+                          part.input.queryPreview.startsWith("{")
+                            ? "json"
+                            : "sql"
+                        }
+                        code={part.input.queryPreview}
+                      />
+                    </div>
+                  )}
+
+                  {part.input?.estimatedRows && (
+                    <p className="text-sm text-muted-foreground">
+                      Estimated rows/documents:{" "}
+                      {part.input.estimatedRows.toLocaleString()}
+                    </p>
+                  )}
+
+                  {part.input?.alternatives &&
+                    part.input.alternatives.length > 0 && (
+                      <div className="text-sm space-y-2">
+                        <p className="font-medium">Alternative approaches:</p>
+                        <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                          {part.input.alternatives.map(
+                            (alt: string, i: number) => (
+                              <li key={i}>{alt}</li>
+                            )
+                          )}
+                        </ul>
+                      </div>
+                    )}
+
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        addToolOutput({
+                          tool: "askForConfirmation",
+                          toolCallId: callId,
+                          output: "Cancelled by user",
+                        })
+                      }
+                    >
+                      <XIcon className="h-4 w-4 mr-2" />
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() =>
+                        addToolOutput({
+                          tool: "askForConfirmation",
+                          toolCallId: callId,
+                          output: "Approved by user",
+                        })
+                      }
+                    >
+                      <CheckIcon className="h-4 w-4 mr-2" />
+                      Proceed
+                    </Button>
+                  </div>
+                </div>
+              </ToolContent>
+            </Tool>
+          );
+        }
+
+        if (part.state === "output-available") {
+          return (
+            <Tool>
+              <ToolHeader
+                state={part.state}
+                title="User Response"
+                type={part.type}
+              />
+              <ToolContent>
+                <Alert
+                  variant={
+                    part.output.includes("Approved")
+                      ? "default"
+                      : "destructive"
                   }
-                />
-              )}
-              {part.state === "output-error" && (
-                <ToolOutput errorText={part.errorText} output={undefined} />
-              )}
-            </ToolContent>
-          </Tool>
-        ),
+                >
+                  {part.output.includes("Approved") ? (
+                    <CheckCircle2 className="h-4 w-4" />
+                  ) : (
+                    <XIcon className="h-4 w-4" />
+                  )}
+                  <AlertDescription>{part.output}</AlertDescription>
+                </Alert>
+              </ToolContent>
+            </Tool>
+          );
+        }
 
-        "tool-askForConfirmation": () => {
-          const callId = part.toolCallId;
+        return null;
+      },
 
-          if (part.state === "input-available") {
-            return (
-              <Tool defaultOpen>
-                <ToolHeader
-                  state={part.state}
-                  title="Confirmation Required"
-                  type={part.type}
-                />
-                <ToolContent>
-                  <div className="space-y-4">
-                    <Alert>
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        {part.input?.message || "Do you want to proceed?"}
+      // EXCEL EXPORT (Works for all database types)
+      "tool-generateExcel": () => (
+        <Tool defaultOpen={part.state === "output-available"}>
+          <ToolHeader
+            state={part.state}
+            title="Generate Excel"
+            type={part.type}
+          />
+          <ToolContent>
+            {part.state === "output-available" && (
+              <ToolOutput
+                errorText={part.errorText}
+                output={
+                  part.output.success ? (
+                    <Alert className="border-green-500/50 bg-green-500/5">
+                      <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      <AlertDescription className="flex items-center gap-2">
+                        <FileSpreadsheet className="h-4 w-4" />
+                        <span>{part.output.message}</span>
                       </AlertDescription>
                     </Alert>
+                  ) : (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{part.output.error}</AlertDescription>
+                    </Alert>
+                  )
+                }
+              />
+            )}
+            {part.state === "output-error" && (
+              <ToolOutput
+                errorText={`Export failed: ${part.errorText}`}
+                output={undefined}
+              />
+            )}
+          </ToolContent>
+        </Tool>
+      ),
+    };
 
-                    {part.input?.queryPreview && (
-                      <div>
-                        <p className="text-sm font-medium mb-2">
-                          Query to execute:
-                        </p>
-                        <CodeBlock
-                          language="sql"
-                          code={part.input.queryPreview}
-                        />
-                      </div>
-                    )}
-
-                    {part.input?.estimatedRows && (
-                      <p className="text-sm text-muted-foreground">
-                        Estimated rows:{" "}
-                        {part.input.estimatedRows.toLocaleString()}
-                      </p>
-                    )}
-
-                    {part.input?.alternatives &&
-                      part.input.alternatives.length > 0 && (
-                        <div className="text-sm space-y-2">
-                          <p className="font-medium">Alternative approaches:</p>
-                          <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                            {part.input.alternatives.map(
-                              (alt: string, i: number) => (
-                                <li key={i}>{alt}</li>
-                              )
-                            )}
-                          </ul>
-                        </div>
-                      )}
-
-                    <div className="flex gap-2 justify-end">
-                      <Button
-                        variant="outline"
-                        onClick={() =>
-                          addToolOutput({
-                            tool: "askForConfirmation",
-                            toolCallId: callId,
-                            output: "Cancelled by user",
-                          })
-                        }
-                      >
-                        <XIcon className="h-4 w-4 mr-2" />
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={() =>
-                          addToolOutput({
-                            tool: "askForConfirmation",
-                            toolCallId: callId,
-                            output: "Approved by user",
-                          })
-                        }
-                      >
-                        <CheckIcon className="h-4 w-4 mr-2" />
-                        Proceed
-                      </Button>
-                    </div>
-                  </div>
-                </ToolContent>
-              </Tool>
-            );
-          }
-
-          if (part.state === "output-available") {
-            return (
-              <Tool>
-                <ToolHeader
-                  state={part.state}
-                  title="User Response"
-                  type={part.type}
-                />
-                <ToolContent>
-                  <Alert
-                    variant={
-                      part.output.includes("Approved")
-                        ? "default"
-                        : "destructive"
-                    }
-                  >
-                    {part.output.includes("Approved") ? (
-                      <CheckCircle2 className="h-4 w-4" />
-                    ) : (
-                      <XIcon className="h-4 w-4" />
-                    )}
-                    <AlertDescription>{part.output}</AlertDescription>
-                  </Alert>
-                </ToolContent>
-              </Tool>
-            );
-          }
-
-          return null;
-        },
-
-        "tool-generateExcel": () => (
-          <Tool defaultOpen={part.state === "output-available"}>
-            <ToolHeader
-              state={part.state}
-              title="Generate Excel"
-              type={part.type}
-            />
-            <ToolContent>
-              {part.state === "output-available" && (
-                <ToolOutput
-                  errorText={part.errorText}
-                  output={
-                    part.output.success ? (
-                      <Alert className="border-green-500/50 bg-green-500/5">
-                        <CheckCircle2 className="h-4 w-4 text-green-600" />
-                        <AlertDescription className="flex items-center gap-2">
-                          <FileSpreadsheet className="h-4 w-4" />
-                          <span>{part.output.message}</span>
-                        </AlertDescription>
-                      </Alert>
-                    ) : (
-                      <Alert variant="destructive">
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertDescription>{part.output.error}</AlertDescription>
-                      </Alert>
-                    )
-                  }
-                />
-              )}
-              {part.state === "output-error" && (
-                <ToolOutput
-                  errorText={`Export failed: ${part.errorText}`}
-                  output={undefined}
-                />
-              )}
-            </ToolContent>
-          </Tool>
-        ),
-      };
-
-      const renderer = toolRenderers[part.type];
-      return renderer ? renderer() : null;
-    },
-    [addToolOutput]
-  );
-
+    const renderer = toolRenderers[part.type];
+    return renderer ? renderer() : null;
+  },
+  [addToolOutput]
+);
   // Excel export handler
   const handleExcelExport = useCallback(
     async (toolCall: any) => {

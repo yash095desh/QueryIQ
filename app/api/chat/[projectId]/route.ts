@@ -21,6 +21,7 @@ import { prisma } from "@/lib/prisma";
 
 export const maxDuration = 30;
 
+
 export async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ projectId: string }> }
@@ -32,6 +33,18 @@ export async function POST(
 
     if (!project) {
       return new NextResponse("Project not found", { status: 404 });
+    }
+
+    // Validate database type
+    const dbType = project.dbType.toLowerCase();
+    if (!["postgresql", "mysql", "mongodb"].includes(dbType)) {
+      return NextResponse.json(
+        {
+          error: "Unsupported database type",
+          message: `Database type '${project.dbType}' is not supported. Please use postgresql, mysql, or mongodb.`,
+        },
+        { status: 400 }
+      );
     }
 
     const { messages, sessionId } = await req.json();
@@ -47,21 +60,26 @@ export async function POST(
     const conversationHistory = await loadMessages(session.id);
     const allMessages = [...conversationHistory, ...messages];
 
-    const dbUrl = await decrypt(project?.encryptedDbUrl);
+    const dbUrl = await decrypt(project.encryptedDbUrl);
 
     const openrouter = createOpenRouter({
       apiKey: `${process.env.API_KEY_REF}`,
     });
 
+    // Create database-specific tools and system prompt
     const result = streamText({
       model: openrouter("openai/gpt-4o-mini"),
       system: getSystemPrompt(
         typeof project.dbSummary === "string"
           ? project.dbSummary
-          : JSON.stringify(project.dbSummary ?? "")
+          : JSON.stringify(project.dbSummary ?? ""),
+        dbType as "postgresql" | "mysql" | "mongodb"
       ),
       messages: convertToModelMessages(allMessages),
-      tools: createDatabaseTools(dbUrl),
+      tools: createDatabaseTools(
+        dbUrl,
+        dbType as "postgresql" | "mysql" | "mongodb"
+      ),
     });
 
     return result.toUIMessageStreamResponse({
@@ -69,7 +87,11 @@ export async function POST(
       generateMessageId: createIdGenerator({ prefix: "msg", size: 16 }),
       messageMetadata({ part }) {
         if (part.type === "finish") {
-          return { sessionId: session.id, projectId: project.id };
+          return {
+            sessionId: session.id,
+            projectId: project.id,
+            dbType: project.dbType,
+          };
         }
         return undefined;
       },
@@ -77,6 +99,7 @@ export async function POST(
         try {
           await saveMessages(session.id, messages);
 
+          // Generate title for new conversations
           if (conversationHistory.length === 0 && messages.length > 0) {
             const firstUserMessage = messages.find(
               (m: any) => m.role === "user"
@@ -90,6 +113,7 @@ export async function POST(
           console.log("Messages saved:", {
             sessionId: session.id,
             messageCount: messages.length,
+            dbType: project.dbType,
           });
         } catch (error) {
           console.error("Error in onFinish:", error);
@@ -98,6 +122,7 @@ export async function POST(
       headers: {
         "X-Session-Id": session.id,
         "X-Project-Id": project.id,
+        "X-DB-Type": project.dbType,
       },
     });
   } catch (error) {
