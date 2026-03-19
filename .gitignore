@@ -44,3 +44,6 @@ next-env.d.ts
 
 # Ignore Tailwind IntelliSense-only config
 tailwind.config.ts
+
+.gitignore
+CLAUDE.md

@@ -1,24 +1,21 @@
 import { prisma } from '@/lib/prisma';
 import { encrypt } from '@/lib/encryption';
-import {
-  DbSummary,
-} from '@/lib/db-introspection';
+import { DbSummary } from '@/lib/db-introspection';
 import { projectSchema } from './projectSchema';
 import { z } from 'zod';
 
-
-
 type CreateProjectRequest = z.infer<typeof projectSchema>;
 
-// ===========================
-// Helper: Create Project
-// ===========================
-
+interface CreateProjectData {
+  schema: DbSummary;
+  summary: string;
+  schemaHash: string;
+}
 
 async function createProject(
   userId: string,
   data: CreateProjectRequest,
-  dbSummary: DbSummary
+  dbData: CreateProjectData
 ) {
   const encryptedDbUrl = encrypt(data.dbUrl);
 
@@ -30,7 +27,10 @@ async function createProject(
         description: data.description,
         dbType: data.dbType,
         encryptedDbUrl,
-        dbSummary: JSON.parse(JSON.stringify(dbSummary)),
+        dbSchema: JSON.parse(JSON.stringify(dbData.schema)),
+        dbSummary: dbData.summary,
+        schemaHash: dbData.schemaHash,
+        lastSyncAt: new Date(),
       },
       select: {
         id: true,
@@ -43,9 +43,9 @@ async function createProject(
       },
     });
   } catch (error) {
-    console.error(' Failed to create project in database:', error);
+    console.error('Failed to create project in database:', error);
     throw new Error('Failed to save project. Please try again.');
   }
 }
 
-export default createProject
+export default createProject;

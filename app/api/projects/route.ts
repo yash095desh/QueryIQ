@@ -27,13 +27,16 @@ export async function POST(req: Request) {
     }
 
     const projectData = parsed.data;
+    console.log(`[projects] creating project: name="${projectData.name}" dbType="${projectData.dbType}"`);
 
     let dbSummary;
     try {
+      console.log(`[projects] introspecting database...`);
       dbSummary = await generateDbSummary(
         projectData.dbUrl,
         projectData.dbType
       );
+      console.log(`[projects] introspection done, ${Array.isArray(dbSummary.schema) ? dbSummary.schema.length : 0} tables found`);
     } catch (error) {
       return NextResponse.json(
         {
@@ -51,17 +54,17 @@ export async function POST(req: Request) {
     const project = await createProject(
       user.id,
       projectData,
-      dbSummary.summary
+      dbSummary
     );
-    console.log(` Project created successfully: ${project.id}`);
+    console.log(`Project created successfully: ${project.id}`);
 
     return NextResponse.json(
       {
         message: "Project created successfully",
         project: {
           ...project,
-          tablesCount: Array.isArray(dbSummary.summary)
-            ? dbSummary.summary.length
+          tablesCount: Array.isArray(dbSummary.schema)
+            ? dbSummary.schema.length
             : 0,
         },
       },

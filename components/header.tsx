@@ -3,9 +3,12 @@
 import { useState } from "react";
 import { Menu, X, Zap } from "lucide-react";
 import { motion } from "motion/react";
+import { useUser } from "@clerk/nextjs";
+import Link from "next/link";
 
 export default function Header() {
   const [isOpen, setIsOpen] = useState(false);
+  const { isSignedIn, isLoaded } = useUser();
 
   return (
     <header className="fixed top-0 w-full z-50 backdrop-blur-md bg-white/10 dark:bg-zinc-900/30 border-b border-border">
@@ -61,14 +64,18 @@ export default function Header() {
           </motion.a>
         </motion.nav>
 
-        {/* CTA Button */}
-        <motion.button
-          className="hidden md:block gradient-green-button px-6 py-2 rounded-lg font-semibold text-sm"
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.98 }}
-        >
-          Start Free Trial
-        </motion.button>
+        {/* CTA Button - Auth Aware */}
+        {isLoaded && (
+          <Link href={isSignedIn ? "/projects" : "/sign-up"} className="hidden md:block">
+            <motion.button
+              className="gradient-green-button px-6 py-2 rounded-lg font-semibold text-sm"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              {isSignedIn ? "My Projects" : "Start Free Trial"}
+            </motion.button>
+          </Link>
+        )}
 
         {/* Mobile Menu Toggle */}
         <button
@@ -103,9 +110,11 @@ export default function Header() {
               <a href="#faq" className="text-gray-300 hover:text-primary">
                 FAQ
               </a>
-              <button className="gradient-green-button px-6 py-2 rounded-lg font-semibold w-full">
-                Start Free Trial
-              </button>
+              <Link href={isSignedIn ? "/projects" : "/sign-up"}>
+                <button className="gradient-green-button px-6 py-2 rounded-lg font-semibold w-full">
+                  {isSignedIn ? "My Projects" : "Start Free Trial"}
+                </button>
+              </Link>
             </nav>
           </motion.div>
         )}

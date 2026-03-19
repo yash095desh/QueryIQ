@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { executeDbQuery, getDbSchema } from "./dbHelpers";
+import type { DbConnection } from "./dbHelpers";
 
 const PAGINATION_CONFIG = {
   maxRowsPerPage: 50,
@@ -30,7 +30,7 @@ class MongoQueryBuilder {
 
 // SQL Query Validator
 class SqlQueryValidator {
-  static validate(query: string, dbType: "postgresql" | "mysql"): {
+  static validate(query: string): {
     isValid: boolean;
     error?: string;
   } {
@@ -51,7 +51,11 @@ class SqlQueryValidator {
   }
 }
 
-export function createDatabaseTools(dbUrl: string, dbType: DbType) {
+/**
+ * Create database tools that use a shared DbConnection.
+ * The connection is managed by the route handler and shared across all tool calls.
+ */
+export function createDatabaseTools(conn: DbConnection, dbType: DbType) {
   // Common tools that work across all database types
   const commonTools = {
     getSchema: {
@@ -67,8 +71,7 @@ export function createDatabaseTools(dbUrl: string, dbType: DbType) {
       }),
       execute: async ({ tableName }: { tableName?: string }) => {
         try {
-          const schema = await getDbSchema(dbUrl, tableName, dbType);
-          return schema;
+          return await conn.getSchema(tableName);
         } catch (error) {
           return {
             error:
@@ -137,13 +140,10 @@ export function createDatabaseTools(dbUrl: string, dbType: DbType) {
         }) => {
           try {
             if (!countQuery.trim().toLowerCase().includes("count(")) {
-              return {
-                error: "Query must be a COUNT query",
-                count: null,
-              };
+              return { error: "Query must be a COUNT query", count: null };
             }
 
-            const results = await executeDbQuery(dbUrl, countQuery, dbType);
+            const results = await conn.query(countQuery);
             const count = results[0]?.count || results[0]?.["COUNT(*)"] || 0;
 
             return {
@@ -160,8 +160,7 @@ export function createDatabaseTools(dbUrl: string, dbType: DbType) {
             };
           } catch (error) {
             return {
-              error:
-                error instanceof Error ? error.message : "Count query failed",
+              error: error instanceof Error ? error.message : "Count query failed",
               count: null,
             };
           }
@@ -169,7 +168,7 @@ export function createDatabaseTools(dbUrl: string, dbType: DbType) {
       },
 
       executeQuery: {
-        description: `Execute a SQL SELECT query with pagination. Always check row count first using getRowCount. 
+        description: `Execute a SQL SELECT query with pagination. Always check row count first using getRowCount.
 Maximum ${PAGINATION_CONFIG.maxRowsPerPage} rows per query. Use LIMIT and OFFSET for pagination.`,
         inputSchema: z.object({
           query: z.string().describe("The SQL SELECT query with LIMIT clause"),
@@ -195,12 +194,12 @@ Maximum ${PAGINATION_CONFIG.maxRowsPerPage} rows per query. Use LIMIT and OFFSET
           estimatedRowCount?: number;
         }) => {
           try {
-            const validation = SqlQueryValidator.validate(query, dbType);
+            const validation = SqlQueryValidator.validate(query);
             if (!validation.isValid) {
               return { error: validation.error, results: null };
             }
 
-            const results = await executeDbQuery(dbUrl, query, dbType);
+            const results = await conn.query(query);
             const resultString = JSON.stringify(results);
             const estimatedTokens = Math.ceil(resultString.length / 4);
 
@@ -212,8 +211,7 @@ Maximum ${PAGINATION_CONFIG.maxRowsPerPage} rows per query. Use LIMIT and OFFSET
                   : results,
               rowCount: results.length,
               estimatedTokens,
-              truncated:
-                estimatedTokens > PAGINATION_CONFIG.maxTokensForResults,
+              truncated: estimatedTokens > PAGINATION_CONFIG.maxTokensForResults,
               warning:
                 estimatedTokens > PAGINATION_CONFIG.maxTokensForResults
                   ? "Results truncated due to size. Consider using aggregations or exporting to Excel."
@@ -228,10 +226,7 @@ Maximum ${PAGINATION_CONFIG.maxRowsPerPage} rows per query. Use LIMIT and OFFSET
             };
           } catch (error) {
             return {
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Query execution failed",
+              error: error instanceof Error ? error.message : "Query execution failed",
               results: null,
             };
           }
@@ -258,18 +253,11 @@ Maximum ${PAGINATION_CONFIG.maxRowsPerPage} rows per query. Use LIMIT and OFFSET
               return { error: "Only SELECT queries allowed", results: null };
             }
 
-            const results = await executeDbQuery(dbUrl, query, dbType);
-
-            return {
-              explanation,
-              results,
-              rowCount: results.length,
-              type: "aggregation",
-            };
+            const results = await conn.query(query);
+            return { explanation, results, rowCount: results.length, type: "aggregation" };
           } catch (error) {
             return {
-              error:
-                error instanceof Error ? error.message : "Aggregation failed",
+              error: error instanceof Error ? error.message : "Aggregation failed",
               results: null,
             };
           }
@@ -305,7 +293,7 @@ Maximum ${PAGINATION_CONFIG.maxRowsPerPage} rows per query. Use LIMIT and OFFSET
         }) => {
           try {
             const query = MongoQueryBuilder.buildCountQuery(collection, filter);
-            const result = await executeDbQuery(dbUrl, query, dbType);
+            const result = await conn.query(query);
             const count = result.count || 0;
 
             return {
@@ -322,8 +310,7 @@ Maximum ${PAGINATION_CONFIG.maxRowsPerPage} rows per query. Use LIMIT and OFFSET
             };
           } catch (error) {
             return {
-              error:
-                error instanceof Error ? error.message : "Count query failed",
+              error: error instanceof Error ? error.message : "Count query failed",
               count: null,
             };
           }
@@ -335,84 +322,43 @@ Maximum ${PAGINATION_CONFIG.maxRowsPerPage} rows per query. Use LIMIT and OFFSET
 Maximum ${PAGINATION_CONFIG.maxRowsPerPage} documents per query.`,
         inputSchema: z.object({
           collection: z.string().describe("Collection name"),
-          filter: z
-            .record(z.string(), z.any())
-            .optional()
-            .describe("MongoDB filter object"),
-          sort: z
-            .record(z.string(), z.number())
-            .optional()
-            .describe("Sort specification (e.g., { createdAt: -1 })"),
-          limit: z
-            .number()
-            .max(PAGINATION_CONFIG.maxRowsPerPage)
-            .optional()
-            .describe(`Maximum ${PAGINATION_CONFIG.maxRowsPerPage} documents`),
+          filter: z.record(z.string(), z.any()).optional().describe("MongoDB filter object"),
+          sort: z.record(z.string(), z.number()).optional().describe("Sort specification (e.g., { createdAt: -1 })"),
+          limit: z.number().max(PAGINATION_CONFIG.maxRowsPerPage).optional().describe(`Maximum ${PAGINATION_CONFIG.maxRowsPerPage} documents`),
           skip: z.number().optional().describe("Number of documents to skip"),
           explanation: z.string().describe("What this query does"),
-          estimatedCount: z
-            .number()
-            .optional()
-            .describe("Estimated total documents from getDocumentCount"),
+          estimatedCount: z.number().optional().describe("Estimated total documents from getDocumentCount"),
         }),
         execute: async ({
-          collection,
-          filter = {},
-          sort,
-          limit = PAGINATION_CONFIG.maxRowsPerPage,
-          skip = 0,
-          explanation,
-          estimatedCount,
+          collection, filter = {}, sort, limit = PAGINATION_CONFIG.maxRowsPerPage,
+          skip = 0, explanation, estimatedCount,
         }: {
-          collection: string;
-          filter?: Record<string, any>;
-          sort?: Record<string, number>;
-          limit?: number;
-          skip?: number;
-          explanation: string;
-          estimatedCount?: number;
+          collection: string; filter?: Record<string, any>; sort?: Record<string, number>;
+          limit?: number; skip?: number; explanation: string; estimatedCount?: number;
         }) => {
           try {
-            const query = MongoQueryBuilder.buildFindQuery(collection, filter, {
-              limit,
-              skip,
-              sort,
-            });
-
-            const results = await executeDbQuery(dbUrl, query, dbType);
+            const query = MongoQueryBuilder.buildFindQuery(collection, filter, { limit, skip, sort });
+            const results = await conn.query(query);
             const resultString = JSON.stringify(results);
             const estimatedTokens = Math.ceil(resultString.length / 4);
 
             return {
               explanation,
-              results:
-                estimatedTokens > PAGINATION_CONFIG.maxTokensForResults
-                  ? results.slice(0, 20)
-                  : results,
+              results: estimatedTokens > PAGINATION_CONFIG.maxTokensForResults ? results.slice(0, 20) : results,
               documentCount: results.length,
               estimatedTokens,
-              truncated:
-                estimatedTokens > PAGINATION_CONFIG.maxTokensForResults,
-              warning:
-                estimatedTokens > PAGINATION_CONFIG.maxTokensForResults
-                  ? "Results truncated due to size. Consider using aggregations or exporting to Excel."
-                  : null,
+              truncated: estimatedTokens > PAGINATION_CONFIG.maxTokensForResults,
+              warning: estimatedTokens > PAGINATION_CONFIG.maxTokensForResults
+                ? "Results truncated due to size. Consider using aggregations or exporting to Excel."
+                : null,
               pagination: {
                 currentPage: Math.floor(skip / limit) + 1,
-                hasMore: estimatedCount
-                  ? skip + limit < estimatedCount
-                  : results.length === limit,
+                hasMore: estimatedCount ? skip + limit < estimatedCount : results.length === limit,
                 totalEstimated: estimatedCount,
               },
             };
           } catch (error) {
-            return {
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Query execution failed",
-              results: null,
-            };
+            return { error: error instanceof Error ? error.message : "Query execution failed", results: null };
           }
         },
       },
@@ -422,41 +368,20 @@ Maximum ${PAGINATION_CONFIG.maxRowsPerPage} documents per query.`,
           "Execute MongoDB aggregation pipeline for statistical summaries, grouping, and complex queries. Use this instead of fetching all documents.",
         inputSchema: z.object({
           collection: z.string().describe("Collection name"),
-          pipeline: z
-            .array(z.any())
-            .describe(
-              "MongoDB aggregation pipeline (e.g., [{ $match: {...} }, { $group: {...} }])"
-            ),
+          pipeline: z.array(z.any()).describe("MongoDB aggregation pipeline"),
           explanation: z.string().describe("What insights this provides"),
         }),
         execute: async ({
-          collection,
-          pipeline,
-          explanation,
+          collection, pipeline, explanation,
         }: {
-          collection: string;
-          pipeline: any[];
-          explanation: string;
+          collection: string; pipeline: any[]; explanation: string;
         }) => {
           try {
-            const query = MongoQueryBuilder.buildAggregateQuery(
-              collection,
-              pipeline
-            );
-            const results = await executeDbQuery(dbUrl, query, dbType);
-
-            return {
-              explanation,
-              results,
-              documentCount: results.length,
-              type: "aggregation",
-            };
+            const query = MongoQueryBuilder.buildAggregateQuery(collection, pipeline);
+            const results = await conn.query(query);
+            return { explanation, results, documentCount: results.length, type: "aggregation" };
           } catch (error) {
-            return {
-              error:
-                error instanceof Error ? error.message : "Aggregation failed",
-              results: null,
-            };
+            return { error: error instanceof Error ? error.message : "Aggregation failed", results: null };
           }
         },
       },
@@ -490,11 +415,12 @@ IMPORTANT RULES:
     return `${basePrompt}
 
 SQL-SPECIFIC RULES:
+- CRITICAL: Always double-quote table and column names to preserve case sensitivity (e.g. SELECT * FROM "Project" not FROM project)
 - Always use LIMIT clause to prevent overwhelming queries (max ${PAGINATION_CONFIG.maxRowsPerPage} rows)
 - For counting operations, use COUNT(*) queries
 - Use aggregations (COUNT, AVG, SUM, MIN, MAX, GROUP BY) for summaries
 - Pagination: Use LIMIT and OFFSET for page navigation
-- Example: SELECT * FROM users WHERE active = true ORDER BY created_at DESC LIMIT 50 OFFSET 0`;
+- Example: SELECT * FROM "User" WHERE "active" = true ORDER BY "createdAt" DESC LIMIT 50 OFFSET 0`;
   }
 
   if (dbType === "mongodb") {

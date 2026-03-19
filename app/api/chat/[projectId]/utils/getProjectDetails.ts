@@ -11,7 +11,10 @@ async function getProjectDetails(projectId: string) {
         description: true,
         encryptedDbUrl: true,
         dbType: true,
+        dbSchema: true,
         dbSummary: true,
+        schemaHash: true,
+        lastSyncAt: true,
       },
     });
 
@@ -25,7 +28,10 @@ async function getProjectDetails(projectId: string) {
       description: project.description ?? "",
       encryptedDbUrl: project.encryptedDbUrl,
       dbType: project.dbType,
+      dbSchema: project.dbSchema,
       dbSummary: project.dbSummary ?? "No summary available",
+      schemaHash: project.schemaHash,
+      lastSyncAt: project.lastSyncAt,
     };
   } catch (error) {
     console.error("Error fetching project details:", error);

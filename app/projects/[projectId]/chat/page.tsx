@@ -106,14 +106,6 @@ function ChatPage() {
   // Generate a stable chat ID that doesn't change during the session
   const [chatId] = useState(() => `new-chat-${Date.now()}`);
 
-  // Initialize sessionId from URL on mount
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      sessionIdRef.current = params.get("session");
-    }
-  }, []);
-
   // Chat hook setup
   const {
     messages,
@@ -191,43 +183,26 @@ function ChatPage() {
     },
   });
 
-  // Sync URL sessionId changes to ref
+  // Sync URL sessionId changes to ref + load session on mount/URL change
   useEffect(() => {
     const urlSessionId = searchParams.get("session");
+    console.log(`[sync] urlSessionId=${urlSessionId}, ref=${sessionIdRef.current}, loaded=${loadedSessionRef.current}`);
 
-    if (urlSessionId !== sessionIdRef.current) {
-      console.log("SessionId changed from URL:", urlSessionId);
-      sessionIdRef.current = urlSessionId;
+    // Always update ref to match URL
+    sessionIdRef.current = urlSessionId;
 
-      // Trigger session load
+    // Load if we haven't loaded this session yet
+    if (urlSessionId && urlSessionId !== loadedSessionRef.current && !isUpdatingUrlRef.current) {
       loadSession(urlSessionId);
+    } else if (!urlSessionId && loadedSessionRef.current) {
+      setMessages([]);
+      setSessionTitle("");
+      loadedSessionRef.current = null;
     }
   }, [searchParams]);
 
-  // Load session function
-  const loadSession = async (sessionId: string | null) => {
-    // New chat - clear state
-    if (!sessionId) {
-      if (loadedSessionRef.current !== null) {
-        setMessages([]);
-        setSessionTitle("");
-        loadedSessionRef.current = null;
-      }
-      return;
-    }
-
-    // It's our own update - just mark as loaded
-    if (isUpdatingUrlRef.current) {
-      loadedSessionRef.current = sessionId;
-      return;
-    }
-
-    // Already loaded this session
-    if (sessionId === loadedSessionRef.current) {
-      return;
-    }
-
-    // Different session - load it
+  // Load session messages from API
+  const loadSession = async (sessionId: string) => {
     setIsLoadingSession(true);
     try {
       const response = await axios.get(
@@ -235,7 +210,14 @@ function ChatPage() {
       );
 
       if (response.status === 200) {
-        setMessages(response.data.messages || []);
+        const loaded = response.data.messages || [];
+        console.log(`[loadSession] loaded ${loaded.length} messages for session=${sessionId}`);
+        loaded.forEach((m: any, i: number) => {
+          const textParts = (m.parts || []).filter((p: any) => p.type === "text");
+          const toolParts = (m.parts || []).filter((p: any) => p.type !== "text" && p.type !== "step-start" && p.type !== "step-finish");
+          console.log(`[loadSession]   msg[${i}] role=${m.role} text="${textParts.map((p: any) => p.text?.slice(0, 50)).join("|")}" tools=${toolParts.map((p: any) => p.type).join(",")}`);
+        });
+        setMessages(loaded);
         setSessionTitle(response.data.title || "Chat Session");
         loadedSessionRef.current = sessionId;
       }
@@ -256,33 +238,46 @@ const renderToolPart = useCallback(
         <Tool defaultOpen={part.state === "output-available"}>
           <ToolHeader state={part.state} title="Row Count" type={part.type} />
           <ToolContent>
+            {(part.state === "input-streaming" ||
+              part.state === "input-available") && (
+              <ToolInput input={part.input ?? {}} />
+            )}
             {part.state === "output-available" && (
               <ToolOutput
                 errorText={part.errorText}
                 output={
-                  <Card className="border-primary/20 bg-primary/5">
-                    <div className="p-4 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <BarChart3 className="h-4 w-4 text-primary" />
-                        <span className="font-semibold text-sm">
-                          Row Count
-                        </span>
+                  part.output?.error ? (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{part.output.error}</AlertDescription>
+                    </Alert>
+                  ) : (
+                    <Card className="border-primary/20 bg-primary/5">
+                      <div className="p-4 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <BarChart3 className="h-4 w-4 text-primary" />
+                          <span className="font-semibold text-sm">
+                            Row Count
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-3xl font-bold text-primary">
+                            {part.output?.count != null
+                              ? part.output.count.toLocaleString()
+                              : "N/A"}
+                          </span>
+                          <span className="text-sm text-muted-foreground">
+                            rows
+                          </span>
+                        </div>
+                        {part.output?.recommendation && (
+                          <p className="text-sm text-muted-foreground">
+                            {part.output.recommendation}
+                          </p>
+                        )}
                       </div>
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-bold text-primary">
-                          {part.output.count?.toLocaleString()}
-                        </span>
-                        <span className="text-sm text-muted-foreground">
-                          rows
-                        </span>
-                      </div>
-                      {part.output.recommendation && (
-                        <p className="text-sm text-muted-foreground">
-                          {part.output.recommendation}
-                        </p>
-                      )}
-                    </div>
-                  </Card>
+                    </Card>
+                  )
                 }
               />
             )}
@@ -302,43 +297,56 @@ const renderToolPart = useCallback(
             type={part.type}
           />
           <ToolContent>
+            {(part.state === "input-streaming" ||
+              part.state === "input-available") && (
+              <ToolInput input={part.input ?? {}} />
+            )}
             {part.state === "output-available" && (
               <ToolOutput
                 errorText={part.errorText}
                 output={
-                  <Card className="border-primary/20 bg-primary/5">
-                    <div className="p-4 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <Database className="h-4 w-4 text-primary" />
-                        <span className="font-semibold text-sm">
-                          Document Count
-                        </span>
-                        {part.output.explanation && (
-                          <Badge variant="outline" className="ml-auto">
-                            MongoDB
-                          </Badge>
+                  part.output?.error ? (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{part.output.error}</AlertDescription>
+                    </Alert>
+                  ) : (
+                    <Card className="border-primary/20 bg-primary/5">
+                      <div className="p-4 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Database className="h-4 w-4 text-primary" />
+                          <span className="font-semibold text-sm">
+                            Document Count
+                          </span>
+                          {part.output?.explanation && (
+                            <Badge variant="outline" className="ml-auto">
+                              MongoDB
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-3xl font-bold text-primary">
+                            {part.output?.count != null
+                              ? part.output.count.toLocaleString()
+                              : "N/A"}
+                          </span>
+                          <span className="text-sm text-muted-foreground">
+                            documents
+                          </span>
+                        </div>
+                        {part.output?.recommendation && (
+                          <p className="text-sm text-muted-foreground">
+                            {part.output.recommendation}
+                          </p>
+                        )}
+                        {part.output?.explanation && (
+                          <p className="text-xs text-muted-foreground italic">
+                            {part.output.explanation}
+                          </p>
                         )}
                       </div>
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-bold text-primary">
-                          {part.output.count?.toLocaleString()}
-                        </span>
-                        <span className="text-sm text-muted-foreground">
-                          documents
-                        </span>
-                      </div>
-                      {part.output.recommendation && (
-                        <p className="text-sm text-muted-foreground">
-                          {part.output.recommendation}
-                        </p>
-                      )}
-                      {part.output.explanation && (
-                        <p className="text-xs text-muted-foreground italic">
-                          {part.output.explanation}
-                        </p>
-                      )}
-                    </div>
-                  </Card>
+                    </Card>
+                  )
                 }
               />
             )}
@@ -371,8 +379,14 @@ const renderToolPart = useCallback(
               <ToolOutput
                 errorText={part.errorText}
                 output={
+                  part.output?.error ? (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{part.output.error}</AlertDescription>
+                    </Alert>
+                  ) : (
                   <div className="space-y-3 w-full overflow-hidden">
-                    {part.output.truncated && (
+                    {part.output?.truncated && (
                       <Alert className="border-orange-500/50 bg-orange-500/5">
                         <AlertTriangle className="h-4 w-4 text-orange-600" />
                         <AlertDescription className="text-orange-900 dark:text-orange-100">
@@ -386,10 +400,10 @@ const renderToolPart = useCallback(
                         MongoDB Documents
                       </span>
                       <Badge variant="secondary" className="ml-auto">
-                        {part.output.documentCount} documents
+                        {part.output?.documentCount ?? 0} documents
                       </Badge>
                     </div>
-                    {part.output.results &&
+                    {part.output?.results &&
                       part.output.results.length > 0 && (
                         <div className="space-y-2">
                           {part.output.results
@@ -426,7 +440,7 @@ const renderToolPart = useCallback(
                           )}
                         </div>
                       )}
-                    {part.output.pagination && (
+                    {part.output?.pagination && (
                       <div className="flex items-center justify-between text-xs text-muted-foreground pt-2">
                         <span>
                           Page {part.output.pagination.currentPage}
@@ -443,6 +457,7 @@ const renderToolPart = useCallback(
                       </div>
                     )}
                   </div>
+                  )
                 }
               />
             )}
@@ -476,8 +491,14 @@ const renderToolPart = useCallback(
               <ToolOutput
                 errorText={part.errorText}
                 output={
+                  part.output?.error ? (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{part.output.error}</AlertDescription>
+                    </Alert>
+                  ) : (
                   <div className="space-y-3 w-full overflow-hidden">
-                    {part.output.truncated && (
+                    {part.output?.truncated && (
                       <Alert className="border-orange-500/50 bg-orange-500/5">
                         <AlertTriangle className="h-4 w-4 text-orange-600" />
                         <AlertDescription className="text-orange-900 dark:text-orange-100">
@@ -491,10 +512,10 @@ const renderToolPart = useCallback(
                         Query Results
                       </span>
                       <Badge variant="secondary" className="ml-auto">
-                        {part.output.rowCount} rows
+                        {part.output?.rowCount ?? 0} rows
                       </Badge>
                     </div>
-                    {part.output.results &&
+                    {part.output?.results &&
                       part.output.results.length > 0 && (
                         <div className="rounded-lg border overflow-hidden w-full">
                           <div className="overflow-x-auto max-w-full">
@@ -548,6 +569,7 @@ const renderToolPart = useCallback(
                         </div>
                       )}
                   </div>
+                  )
                 }
               />
             )}
@@ -571,29 +593,45 @@ const renderToolPart = useCallback(
             type={part.type}
           />
           <ToolContent>
+            {(part.state === "input-streaming" ||
+              part.state === "input-available") && (
+              <ToolInput
+                input={
+                  part.input?.explanation
+                    ? { explanation: part.input.explanation }
+                    : {}
+                }
+              />
+            )}
             {part.state === "output-available" && (
               <ToolOutput
                 errorText={part.errorText}
                 output={
+                  part.output?.error ? (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{part.output.error}</AlertDescription>
+                    </Alert>
+                  ) : (
                   <Card>
                     <div className="p-4 space-y-3">
                       <div className="flex items-center gap-2">
                         <BarChart3 className="h-4 w-4 text-primary" />
                         <span className="font-semibold text-sm">
-                          {part.output.explanation || "Summary Statistics"}
+                          {part.output?.explanation || "Summary Statistics"}
                         </span>
-                        {part.output.documentCount !== undefined && (
+                        {part.output?.documentCount !== undefined && (
                           <Badge variant="outline" className="ml-auto">
                             {part.output.documentCount} results
                           </Badge>
                         )}
-                        {part.output.rowCount !== undefined && (
+                        {part.output?.rowCount !== undefined && (
                           <Badge variant="outline" className="ml-auto">
                             {part.output.rowCount} rows
                           </Badge>
                         )}
                       </div>
-                      {part.output.results && (
+                      {part.output?.results && (
                         <div className="rounded-lg border overflow-hidden">
                           <CodeBlock
                             language="json"
@@ -603,6 +641,7 @@ const renderToolPart = useCallback(
                       )}
                     </div>
                   </Card>
+                  )
                 }
               />
             )}
@@ -738,6 +777,24 @@ const renderToolPart = useCallback(
       "tool-askForConfirmation": () => {
         const callId = part.toolCallId;
 
+        if (part.state === "input-streaming") {
+          return (
+            <Tool defaultOpen>
+              <ToolHeader
+                state={part.state}
+                title="Confirmation Required"
+                type={part.type}
+              />
+              <ToolContent>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader className="h-4 w-4" />
+                  Preparing confirmation...
+                </div>
+              </ToolContent>
+            </Tool>
+          );
+        }
+
         if (part.state === "input-available") {
           return (
             <Tool defaultOpen>
@@ -826,6 +883,10 @@ const renderToolPart = useCallback(
         }
 
         if (part.state === "output-available") {
+          const outputStr = typeof part.output === "string"
+            ? part.output
+            : JSON.stringify(part.output ?? "");
+          const isApproved = outputStr.includes("Approved");
           return (
             <Tool>
               <ToolHeader
@@ -834,19 +895,13 @@ const renderToolPart = useCallback(
                 type={part.type}
               />
               <ToolContent>
-                <Alert
-                  variant={
-                    part.output.includes("Approved")
-                      ? "default"
-                      : "destructive"
-                  }
-                >
-                  {part.output.includes("Approved") ? (
+                <Alert variant={isApproved ? "default" : "destructive"}>
+                  {isApproved ? (
                     <CheckCircle2 className="h-4 w-4" />
                   ) : (
                     <XIcon className="h-4 w-4" />
                   )}
-                  <AlertDescription>{part.output}</AlertDescription>
+                  <AlertDescription>{outputStr}</AlertDescription>
                 </Alert>
               </ToolContent>
             </Tool>
@@ -869,7 +924,7 @@ const renderToolPart = useCallback(
               <ToolOutput
                 errorText={part.errorText}
                 output={
-                  part.output.success ? (
+                  part.output?.success ? (
                     <Alert className="border-green-500/50 bg-green-500/5">
                       <CheckCircle2 className="h-4 w-4 text-green-600" />
                       <AlertDescription className="flex items-center gap-2">
@@ -880,7 +935,9 @@ const renderToolPart = useCallback(
                   ) : (
                     <Alert variant="destructive">
                       <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>{part.output.error}</AlertDescription>
+                      <AlertDescription>
+                        {part.output?.error || "Export failed"}
+                      </AlertDescription>
                     </Alert>
                   )
                 }
@@ -898,7 +955,34 @@ const renderToolPart = useCallback(
     };
 
     const renderer = toolRenderers[part.type];
-    return renderer ? renderer() : null;
+    if (renderer) return renderer();
+
+    // Fallback for unknown tool types
+    return (
+      <Tool defaultOpen={part.state === "output-available"}>
+        <ToolHeader
+          state={part.state}
+          title={part.type?.replace("tool-", "") || "Tool"}
+          type={part.type}
+        />
+        <ToolContent>
+          {part.state === "output-available" && part.output && (
+            <ToolOutput
+              errorText={part.errorText}
+              output={
+                <CodeBlock
+                  language="json"
+                  code={JSON.stringify(part.output, null, 2)}
+                />
+              }
+            />
+          )}
+          {part.state === "output-error" && (
+            <ToolOutput errorText={part.errorText} output={undefined} />
+          )}
+        </ToolContent>
+      </Tool>
+    );
   },
   [addToolOutput]
 );
@@ -1091,7 +1175,10 @@ const renderToolPart = useCallback(
                       (p: any) => p.type === "text"
                     );
                     const toolParts = message.parts.filter(
-                      (p: any) => p.type !== "text"
+                      (p: any) =>
+                        p.type !== "text" &&
+                        p.type !== "step-start" &&
+                        p.type !== "step-finish"
                     );
 
                     return (

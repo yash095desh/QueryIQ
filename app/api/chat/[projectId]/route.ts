@@ -11,6 +11,7 @@ import getProjectDetails from "./utils/getProjectDetails";
 import { createDatabaseTools, getSystemPrompt } from "./utils/tools";
 import { NextRequest, NextResponse } from "next/server";
 import {
+  createDbConnection,
   getOrCreateSession,
   loadMessages,
   saveMessages,
@@ -21,22 +22,26 @@ import { prisma } from "@/lib/prisma";
 
 export const maxDuration = 30;
 
-
 export async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ projectId: string }> }
 ) {
+  let dbConnection: Awaited<ReturnType<typeof createDbConnection>> | null = null;
+
   try {
     const { projectId } = await ctx.params;
+    console.log(`[chat] POST projectId=${projectId}`);
     const user = await getAuthenticatedUser();
+    console.log(`[chat] user=${user.id}`);
     const project = await getProjectDetails(projectId);
 
     if (!project) {
       return new NextResponse("Project not found", { status: 404 });
     }
 
-    // Validate database type
-    const dbType = project.dbType.toLowerCase();
+    // Validate and normalize database type ("postgres" → "postgresql")
+    const rawDbType = project.dbType.toLowerCase();
+    const dbType = rawDbType === "postgres" ? "postgresql" : rawDbType;
     if (!["postgresql", "mysql", "mongodb"].includes(dbType)) {
       return NextResponse.json(
         {
@@ -57,30 +62,37 @@ export async function POST(
     }
 
     const session = await getOrCreateSession(user.id, project.id, sessionId);
+    console.log(`[chat] session=${session.id} (${sessionId ? 'existing' : 'new'})`);
     const conversationHistory = await loadMessages(session.id);
     const allMessages = [...conversationHistory, ...messages];
+    console.log(`[chat] history=${conversationHistory.length} + new=${messages.length}`);
 
     const dbUrl = await decrypt(project.encryptedDbUrl);
+
+    // Create ONE connection for the entire request — shared across all tool calls
+    const typedDbType = dbType as "postgresql" | "mysql" | "mongodb";
+    console.log(`[chat] connecting to ${typedDbType} db...`);
+    dbConnection = await createDbConnection(dbUrl, typedDbType);
+    console.log(`[chat] db connected`);
 
     const openrouter = createOpenRouter({
       apiKey: `${process.env.API_KEY_REF}`,
     });
 
-    // Create database-specific tools and system prompt
+    // Use the compressed AI summary for the system prompt (not raw JSON schema)
+    const systemPromptSummary = typeof project.dbSummary === "string"
+      ? project.dbSummary
+      : JSON.stringify(project.dbSummary ?? "");
+
     const result = streamText({
       model: openrouter("openai/gpt-4o-mini"),
-      system: getSystemPrompt(
-        typeof project.dbSummary === "string"
-          ? project.dbSummary
-          : JSON.stringify(project.dbSummary ?? ""),
-        dbType as "postgresql" | "mysql" | "mongodb"
-      ),
+      system: getSystemPrompt(systemPromptSummary, typedDbType),
       messages: convertToModelMessages(allMessages),
-      tools: createDatabaseTools(
-        dbUrl,
-        dbType as "postgresql" | "mysql" | "mongodb"
-      ),
+      tools: createDatabaseTools(dbConnection, typedDbType),
     });
+
+    // Capture connection ref for cleanup in onFinish
+    const connRef = dbConnection;
 
     return result.toUIMessageStreamResponse({
       originalMessages: allMessages,
@@ -96,10 +108,13 @@ export async function POST(
         return undefined;
       },
       onFinish: async ({ messages }) => {
+        console.log(`[chat] stream finished, closing db connection`);
+        await connRef.close();
+
         try {
           await saveMessages(session.id, messages);
+          console.log(`[chat] saved ${messages.length} messages to session=${session.id}`);
 
-          // Generate title for new conversations
           if (conversationHistory.length === 0 && messages.length > 0) {
             const firstUserMessage = messages.find(
               (m: any) => m.role === "user"
@@ -107,16 +122,11 @@ export async function POST(
             if (firstUserMessage) {
               const title = await generateSessionTitle(firstUserMessage);
               await updateSessionTitle(session.id, title);
+              console.log(`[chat] session title: "${title}"`);
             }
           }
-
-          console.log("Messages saved:", {
-            sessionId: session.id,
-            messageCount: messages.length,
-            dbType: project.dbType,
-          });
         } catch (error) {
-          console.error("Error in onFinish:", error);
+          console.error("[chat] onFinish error:", error);
         }
       },
       headers: {
@@ -126,7 +136,10 @@ export async function POST(
       },
     });
   } catch (error) {
-    console.error("Chat API Error:", error);
+    // Close connection on error path too
+    if (dbConnection) await dbConnection.close();
+
+    console.error("[chat] error:", error);
     return NextResponse.json(
       {
         error: "Internal server error",
@@ -153,11 +166,18 @@ export async function GET(
   const messages = await loadMessages(sessionId);
   const session = await prisma.chatSession.findUnique({
     where: { id: sessionId },
-    select: { title: true }
+    select: { title: true },
   });
 
-  return Response.json({ 
-    messages, 
-    title: session?.title 
+  console.log(`[chat GET] session=${sessionId}, messages=${messages.length}`);
+  messages.forEach((m, i) => {
+    const textParts = m.parts.filter((p: any) => p.type === "text");
+    const toolParts = m.parts.filter((p: any) => p.type !== "text");
+    console.log(`[chat GET]   msg[${i}] role=${m.role} textParts=${textParts.length} toolParts=${toolParts.length} partTypes=${m.parts.map((p: any) => p.type).join(",")}`);
+  });
+
+  return Response.json({
+    messages,
+    title: session?.title,
   });
 }

@@ -1,6 +1,7 @@
-import { Client as PgClient, QueryResult } from 'pg';
+import { Client as PgClient } from 'pg';
 import mysql, { Connection as MySQLConnection, RowDataPacket } from 'mysql2/promise';
-import mongoose, { Connection as MongooseConnection } from 'mongoose';
+import { MongoClient } from 'mongodb';
+import crypto from 'crypto';
 
 // ===========================
 // Type Definitions
@@ -19,7 +20,7 @@ export interface TableSummary {
 export interface CollectionSummary {
   collection: string;
   documentCount: number;
-  storageSize: number;
+  sampleFields?: { name: string; type: string }[];
 }
 
 export type DbSummary = TableSummary[] | CollectionSummary[];
@@ -29,21 +30,6 @@ export enum DatabaseType {
   POSTGRESQL = 'postgresql',
   MYSQL = 'mysql',
   MONGODB = 'mongodb',
-}
-
-interface PostgresTableRow {
-  table_name: string;
-}
-
-interface PostgresColumnRow {
-  column_name: string;
-  data_type: string;
-}
-
-interface MongoCollStats {
-  count: number;
-  size?: number;
-  storageSize?: number;
 }
 
 // ===========================
@@ -72,99 +58,91 @@ export class UnsupportedDatabaseError extends Error {
 }
 
 // ===========================
-// PostgreSQL Introspection
+// PostgreSQL Introspection (single query, no N+1)
 // ===========================
 
 async function introspectPostgres(connectionString: string): Promise<TableSummary[]> {
-  const client = new PgClient({ connectionString });
+  const client = new PgClient({
+    connectionString,
+    connectionTimeoutMillis: 10000,
+    statement_timeout: 15000,
+  });
 
   try {
     await client.connect();
 
-    const tables = await fetchPostgresTables(client);
-    const summary: TableSummary[] = [];
+    // Single query to get ALL tables and columns at once
+    const result = await client.query(`
+      SELECT table_name, column_name, data_type
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+      ORDER BY table_name, ordinal_position
+    `);
 
-    for (const tableName of tables) {
-      const columns = await fetchPostgresColumns(client, tableName);
-      summary.push({
-        table: tableName,
-        columns,
+    // Group columns by table in JS
+    const tables = new Map<string, TableColumn[]>();
+    for (const row of result.rows) {
+      if (!tables.has(row.table_name)) {
+        tables.set(row.table_name, []);
+      }
+      tables.get(row.table_name)!.push({
+        name: row.column_name,
+        type: row.data_type,
       });
     }
 
-    return summary;
+    return Array.from(tables.entries()).map(([table, columns]) => ({
+      table,
+      columns,
+    }));
   } catch (error) {
-    if (error instanceof DatabaseIntrospectionError) {
-      throw error;
-    }
+    if (error instanceof DatabaseIntrospectionError) throw error;
     throw new DatabaseConnectionError('PostgreSQL', error as Error);
   } finally {
     await safeClose(client.end.bind(client), 'PostgreSQL client');
   }
 }
 
-async function fetchPostgresTables(client: PgClient): Promise<string[]> {
-  try {
-    const result: QueryResult<PostgresTableRow> = await client.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public'
-      ORDER BY table_name;
-    `);
-
-    return result.rows.map((row) => row.table_name);
-  } catch (error) {
-    throw new DatabaseIntrospectionError('PostgreSQL', error as Error);
-  }
-}
-
-async function fetchPostgresColumns(client: PgClient, tableName: string): Promise<TableColumn[]> {
-  try {
-    const result: QueryResult<PostgresColumnRow> = await client.query(
-      `
-      SELECT column_name, data_type 
-      FROM information_schema.columns 
-      WHERE table_name = $1
-      ORDER BY ordinal_position;
-    `,
-      [tableName]
-    );
-
-    return result.rows.map((col) => ({
-      name: col.column_name,
-      type: col.data_type,
-    }));
-  } catch (error) {
-    throw new DatabaseIntrospectionError('PostgreSQL', error as Error);
-  }
-}
-
 // ===========================
-// MySQL Introspection
+// MySQL Introspection (single query, no N+1)
 // ===========================
 
 async function introspectMySQL(connectionString: string): Promise<TableSummary[]> {
   let connection: MySQLConnection | null = null;
 
   try {
-    connection = await mysql.createConnection(connectionString);
+    connection = await mysql.createConnection({
+      uri: connectionString,
+      connectTimeout: 10000,
+    });
 
-    const tables = await fetchMySQLTables(connection);
-    const summary: TableSummary[] = [];
+    // Single query to get ALL tables and columns at once
+    const [rows] = await connection.query<RowDataPacket[]>(`
+      SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+      ORDER BY TABLE_NAME, ORDINAL_POSITION
+    `);
 
-    for (const tableName of tables) {
-      const columns = await fetchMySQLColumns(connection, tableName);
-      summary.push({
-        table: tableName,
-        columns,
+    // Group columns by table in JS
+    const tables = new Map<string, TableColumn[]>();
+    for (const row of rows) {
+      const tableName = row.TABLE_NAME as string;
+      if (!tables.has(tableName)) {
+        tables.set(tableName, []);
+      }
+      tables.get(tableName)!.push({
+        name: row.COLUMN_NAME as string,
+        type: row.DATA_TYPE as string,
       });
     }
 
-    return summary;
+    return Array.from(tables.entries()).map(([table, columns]) => ({
+      table,
+      columns,
+    }));
   } catch (error) {
-    if (error instanceof DatabaseIntrospectionError) {
-      throw error;
-    }
+    if (error instanceof DatabaseIntrospectionError) throw error;
     throw new DatabaseConnectionError('MySQL', error as Error);
   } finally {
     if (connection) {
@@ -173,76 +151,50 @@ async function introspectMySQL(connectionString: string): Promise<TableSummary[]
   }
 }
 
-async function fetchMySQLTables(connection: MySQLConnection): Promise<string[]> {
-  try {
-    const [rows] = await connection.query<RowDataPacket[]>('SHOW TABLES;');
-    return rows.map((row) => Object.values(row)[0] as string).sort();
-  } catch (error) {
-    throw new DatabaseIntrospectionError('MySQL', error as Error);
-  }
-}
-
-async function fetchMySQLColumns(connection: MySQLConnection, tableName: string): Promise<TableColumn[]> {
-  try {
-    const [rows] = await connection.query<RowDataPacket[]>(`SHOW COLUMNS FROM \`${tableName}\`;`);
-    return rows.map((col) => ({
-      name: col.Field as string,
-      type: col.Type as string,
-    }));
-  } catch (error) {
-    throw new DatabaseIntrospectionError('MySQL', error as Error);
-  }
-}
-
 // ===========================
-// MongoDB Introspection
+// MongoDB Introspection (uses MongoClient directly, not mongoose singleton)
 // ===========================
 
 async function introspectMongo(connectionString: string): Promise<CollectionSummary[]> {
-  try {
-    const dbName = extractMongoDbName(connectionString);
-    await mongoose.connect(connectionString, { dbName });
+  const client = new MongoClient(connectionString, {
+    serverSelectionTimeoutMS: 10000,
+    connectTimeoutMS: 10000,
+  });
 
-    const db = mongoose.connection.db;
-    if (!db) {
-      throw new Error('Failed to obtain MongoDB database instance');
-    }
+  try {
+    await client.connect();
+    const db = client.db();
 
     const collections = await db.listCollections().toArray();
     const summary: CollectionSummary[] = [];
 
     for (const collection of collections) {
-      const stats = await fetchMongoCollectionStats(db, collection.name);
-      summary.push(stats);
+      const coll = db.collection(collection.name);
+      const count = await coll.countDocuments({}, { maxTimeMS: 5000 });
+
+      // Sample one document to infer field types
+      const sample = await coll.findOne();
+      const sampleFields = sample
+        ? Object.entries(sample).map(([key, value]) => ({
+            name: key,
+            type: Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value,
+          }))
+        : undefined;
+
+      summary.push({
+        collection: collection.name,
+        documentCount: count,
+        sampleFields,
+      });
     }
 
     return summary.sort((a, b) => a.collection.localeCompare(b.collection));
   } catch (error) {
-    if (error instanceof DatabaseIntrospectionError) {
-      throw error;
-    }
+    if (error instanceof DatabaseIntrospectionError) throw error;
     throw new DatabaseConnectionError('MongoDB', error as Error);
   } finally {
-    await safeClose(mongoose.disconnect.bind(mongoose), 'MongoDB connection');
+    await safeClose(client.close.bind(client), 'MongoDB connection');
   }
-}
-
-async function fetchMongoCollectionStats(db: any, collectionName: string): Promise<CollectionSummary> {
-  try {
-    const stats = (await db.command({ collStats: collectionName })) as MongoCollStats;
-    return {
-      collection: collectionName,
-      documentCount: stats.count || 0,
-      storageSize: stats.size || stats.storageSize || 0,
-    };
-  } catch (error) {
-    throw new DatabaseIntrospectionError('MongoDB', error as Error);
-  }
-}
-
-function extractMongoDbName(connectionString: string): string | undefined {
-  const match = connectionString.match(/\/([^/?]+)(\?|$)/);
-  return match?.[1];
 }
 
 // ===========================
@@ -253,42 +205,31 @@ async function safeClose(closeFn: () => Promise<unknown>, resourceName: string):
   try {
     await closeFn();
   } catch (error) {
-    console.warn(`⚠️ Failed to close ${resourceName}:`, (error as Error).message);
+    console.warn(`Failed to close ${resourceName}:`, (error as Error).message);
   }
 }
 
 function normalizeDatabaseType(dbType: string): DatabaseType {
   const normalized = dbType.toLowerCase().trim();
-  
+
   if (Object.values(DatabaseType).includes(normalized as DatabaseType)) {
     return normalized as DatabaseType;
   }
-  
+
   throw new UnsupportedDatabaseError(dbType);
+}
+
+/**
+ * Generate a hash of table/collection names for quick schema drift detection.
+ */
+export function generateSchemaHash(summary: DbSummary): string {
+  const names = summary.map((item: any) => item.table || item.collection).sort();
+  return crypto.createHash('sha256').update(JSON.stringify(names)).digest('hex').slice(0, 16);
 }
 
 // ===========================
 // Public API
 // ===========================
-
-/**
- * Introspects a database and returns its schema summary.
- * 
- * @param connectionString - The database connection string
- * @param dbType - The type of database (postgres, mysql, mongodb)
- * @returns A summary of the database schema
- * @throws {UnsupportedDatabaseError} If the database type is not supported
- * @throws {DatabaseConnectionError} If connection to the database fails
- * @throws {DatabaseIntrospectionError} If introspection fails
- * 
- * @example
- * ```typescript
- * const summary = await introspectDatabase(
- *   'postgresql://user:pass@localhost:5432/mydb',
- *   'postgres'
- * );
- * ```
- */
 
 export async function introspectDatabase(
   connectionString: string,
@@ -308,7 +249,6 @@ export async function introspectDatabase(
       return introspectMongo(connectionString);
 
     default:
-      // This should never happen due to normalizeDatabaseType, but satisfies TypeScript
       throw new UnsupportedDatabaseError(dbType);
   }
 }
