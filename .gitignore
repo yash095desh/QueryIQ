@@ -47,3 +47,4 @@ tailwind.config.ts
 
 .gitignore
 CLAUDE.md
+.claude
